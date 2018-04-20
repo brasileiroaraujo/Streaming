@@ -183,7 +183,8 @@ public class PMSD2 {
 //    blocksUpdated.setValue(new HashSet<String>());
     
     
-    Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>>  mappingFunctionBlockPreprocessed = (key, listBlocks, state) -> {
+    Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
+    			mappingFunctionBlockPreprocessed = (key, listBlocks, state) -> {
     	List<List<String>> count = (state.exists() ? state.get() : new ArrayList<List<String>>());
     	List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.get().spliterator(), false).collect(Collectors.toList());
     	count.addAll(listOfBlocks);
@@ -202,7 +203,7 @@ public class PMSD2 {
 		
 		@Override
 		public Boolean call(Tuple2<String, List<List<String>>> tuple) throws Exception {
-			int x = broadcastBlocksUpdated.getValue().size();
+			HashSet<String> x = broadcastBlocksUpdated.getValue();
 			System.out.println(x);
 			if (broadcastBlocksUpdated.getValue().contains(tuple._1())) {
 				return true;
