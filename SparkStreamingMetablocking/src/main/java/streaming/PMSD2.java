@@ -14,6 +14,7 @@ import java.util.stream.StreamSupport;
 import javax.swing.plaf.synth.SynthSpinnerUI;
 
 import org.apache.spark.Accumulator;
+import org.apache.spark.ContextCleaner;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
@@ -32,6 +33,7 @@ import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaMapWithStateDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
+import org.apache.spark.util.AccumulatorV2;
 
 import DataStructures.Attribute;
 import DataStructures.EntityProfile;
@@ -53,13 +55,15 @@ public class PMSD2 {
         .appName("streaming-Filtering")
         .master("local[4]")
         .getOrCreate();
+    
+//    ContextCleaner cleaner = new ContextCleaner(spark.sparkContext());
 
     //
     // Operating on a raw RDD actually requires access to the more low
     // level SparkContext -- get the special Java version for convenience
     //
     JavaSparkContext sc = new JavaSparkContext(spark.sparkContext());
-
+    
 
     // streams will produce data every second (note: it would be nice if this was Java 8's Duration class,
     // but it isn't -- it comes from org.apache.spark.streaming)
@@ -153,7 +157,6 @@ public class PMSD2 {
     //list of blocks that will be updated
     Accumulator<HashSet<String>> blocksUpdated = sc.accumulator(new HashSet<String>(), new AccumulatorParamSet());
     
-    
     //coloca as tuplas no formato <b1, (e1, b1, b2)>
     JavaPairDStream<String, List<String>> blockEntityAndAllBlocks = entitySetBlocks.flatMapToPair(new PairFlatMapFunction<Tuple2<String,Iterable<String>>, String, List<String>>() {
 
@@ -180,7 +183,10 @@ public class PMSD2 {
     
     
     Broadcast<HashSet<String>> broadcastBlocksUpdated = sc.broadcast(blocksUpdated.value());
-//    blocksUpdated.setValue(new HashSet<String>());
+    
+//    cleaner.doCleanupAccum(blocksUpdated.id(), true);
+//    blocksUpdated = sc.accumulator(new HashSet<String>(), new AccumulatorParamSet());
+    
     
     
     Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
@@ -204,7 +210,7 @@ public class PMSD2 {
 		@Override
 		public Boolean call(Tuple2<String, List<List<String>>> tuple) throws Exception {
 			HashSet<String> x = broadcastBlocksUpdated.getValue();
-			System.out.println(x);
+			System.out.println(x.size());
 			if (broadcastBlocksUpdated.getValue().contains(tuple._1())) {
 				return true;
 			}
@@ -222,7 +228,7 @@ public class PMSD2 {
     
 	//coloca as tuplas no formato <e1, e2 = 0.65> (calcula similaridade)
     JavaPairDStream<String, String> similarities = onlyUpdatedBlocks.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
-
+    	
 		@Override
 		public Iterator<Tuple2<String, String>> call(Tuple2<String, List<List<String>>> input) throws Exception {
 			
@@ -276,6 +282,7 @@ public class PMSD2 {
     
     //coloca as tuplas no formato <e1, [(e2 = 0.65), (e3 = 0.8)]>
     JavaPairDStream<String, Iterable<String>> similaritiesGrouped = similarities.groupByKey();
+    
     
     
 //    similaritiesGrouped.foreachRDD(rdd -> {
@@ -418,6 +425,7 @@ public class PMSD2 {
               
               // give it time to get processed
               Thread.sleep(2000);
+              
 
               fm.makeFiles();
 
