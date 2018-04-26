@@ -3,7 +3,6 @@ package streaming;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -12,15 +11,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-import javax.swing.plaf.synth.SynthSpinnerUI;
-
 import org.apache.spark.Accumulator;
-import org.apache.spark.ContextCleaner;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
-import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
@@ -36,18 +31,20 @@ import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaMapWithStateDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
-import org.apache.spark.util.AccumulatorV2;
 import org.apache.spark.util.CollectionAccumulator;
+import org.apache.spark.util.LongAccumulator;
 
 import DataStructures.Attribute;
 import DataStructures.EntityProfile;
 import scala.Tuple2;
 import streaming.util.AccumulatorParamSet;
 import streaming.util.CSVFileStreamGeneratorPMSD;
+import streaming.util.JavaDroppedWordsCounter;
+import streaming.util.JavaWordBlacklist;
 
 
 //Parallel-based Metablockig for Streaming Data
-public class PMSD2 {
+public class PMSD3 {
   public static void main(String[] args) {
     //
     // The "modern" way to initialize Spark is to create a SparkSession
@@ -114,23 +111,6 @@ public class PMSD2 {
     
     JavaPairDStream<String, Iterable<EntityProfile>> streamGrouped = streamOfPairs.groupByKey();
 
-//    Function3<String, Optional<StreamingEntity>, State<List<StreamingEntity>>, Tuple2<String, List<StreamingEntity>>>  mappingFunction = (category, item, state) -> {
-//    	List<StreamingEntity> count = (state.exists() ? state.get() : new ArrayList<StreamingEntity>());
-//    	count.add(item.get());
-//        Tuple2<String, List<StreamingEntity>> thisOne = new Tuple2<>(category, count);
-//        state.update(count);
-//        return thisOne;
-//    };
-//    
-//    //save in state
-//    JavaMapWithStateDStream<String, StreamingEntity, List<StreamingEntity>, Tuple2<String, List<StreamingEntity>>> streamTokenBlocking =
-//        streamOfPairs.mapWithState(StateSpec.function(mappingFunction));
-    
-
-//    streamTokenBlocking.foreachRDD(rdd -> {
-//      System.out.println("Batch size: " + rdd.count());
-//      rdd.foreach(e -> System.out.println(e));
-//    });
     
     //START THE METABLOCKING
     //coloca as tuplas no formato <e1, b1>
@@ -150,10 +130,6 @@ public class PMSD2 {
 		}
 	});
     
-//    pairEntityBlock.foreachRDD(rdd -> {
-//      System.out.println("Batch size: " + rdd.count());
-//      rdd.foreach(e -> System.out.println(e));
-//    });
     
     //coloca as tuplas no formato <e1, [b1,b2]>
     JavaPairDStream<String, Iterable<String>> entitySetBlocks = pairEntityBlock.groupByKey();
@@ -186,26 +162,31 @@ public class PMSD2 {
     //coloca as tuplas no formato <b1, [(e1, b1, b2), (e2, b1), (e3, b1, b2)]>
     JavaPairDStream<String, Iterable<List<String>>> blockPreprocessed = blockEntityAndAllBlocks.groupByKey();
     
-    CollectionAccumulator<String> accum = sc.sc().collectionAccumulator("accumulatorString");
-//    blockPreprocessed.foreachRDD(new VoidFunction<JavaPairRDD<String,Iterable<List<String>>>>() {
-//		
-//		@Override
-//		public void call(JavaPairRDD<String, Iterable<List<String>>> rdd) throws Exception {
-//			rdd.keys().foreach(new VoidFunction<String>() {
-//				@Override
-//				public void call(String key) throws Exception {
-//					accum.add(key);
-//				}
-//			});
-//		}
-//	});
-    Broadcast<List<String>> broadcastVar = sc.broadcast(accum.value());
     
-    Broadcast<HashSet<String>> broadcastBlocksUpdated = sc.broadcast(blocksUpdated.value());
+    // Get or register the droppedWordsCounter Accumulator
+    final Accumulator<HashSet<String>> droppedWordsCounter =
+        JavaDroppedWordsCounter.getInstance(sc);
+    LongAccumulator size = sc.sc().longAccumulator();
+    Accumulator<HashSet<String>> collection = sc.sc().accumulator(new HashSet<String>(), new AccumulatorParamSet());
+     
     
-//    cleaner.doCleanupAccum(blocksUpdated.id(), true);
-//    blocksUpdated = sc.accumulator(new HashSet<String>(), new AccumulatorParamSet());
-    
+    blockPreprocessed.foreachRDD(new VoidFunction<JavaPairRDD<String,Iterable<List<String>>>>() {
+		
+		@Override
+		public void call(JavaPairRDD<String, Iterable<List<String>>> rdd) throws Exception {
+	        // Use blacklist to drop words and use droppedWordsCounter to count them
+	        rdd.foreach(new VoidFunction<Tuple2<String,Iterable<List<String>>>>() {
+				@Override
+				public void call(Tuple2<String, Iterable<List<String>>> t) throws Exception {
+					HashSet<String> set = new HashSet<String>();
+					set.add(t._1());
+					droppedWordsCounter.add(set);
+					size.add(1L);
+					collection.add(set);
+				}
+			});
+		}
+	});
     
     
     Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
@@ -223,18 +204,51 @@ public class PMSD2 {
     		blockPreprocessed.mapWithState(StateSpec.function(mappingFunctionBlockPreprocessed));
     
     
+//    finalOutputProcessed.foreachRDD(new VoidFunction<JavaRDD<Tuple2<String,List<List<String>>>>>() {
+//		@Override
+//		public void call(JavaRDD<Tuple2<String, List<List<String>>>> rdd) throws Exception {
+//			final Accumulator<HashSet<String>> droppedWordsCounter =
+//		            JavaDroppedWordsCounter.getInstance(new JavaSparkContext(rdd.context()));
+//			// Get or register the blacklist Broadcast
+//	        final Broadcast<HashSet<String>> blacklist =
+//	            JavaWordBlacklist.getInstance(new JavaSparkContext(rdd.context()), droppedWordsCounter.value());
+//	        
+//	        JavaRDD<Tuple2<String, List<List<String>>>> go = rdd.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
+//
+//				@Override
+//				public Boolean call(Tuple2<String, List<List<String>>> v1) throws Exception {
+//					HashSet<String> checkedBlocks = blacklist.value();
+//					
+//					if (checkedBlocks.contains(v1._1())) {
+//						return true;
+//					} else {
+//						return false;
+//					}
+//				}
+//			});
+//	        
+//	        System.out.println(go.count());
+//			
+//		}
+//	});
+    
+    final Broadcast<HashSet<String>> blacklist =
+            JavaWordBlacklist.getInstance(sc, collection.value());
+    
     //select only the updated blocks (in this turn)
     JavaDStream<Tuple2<String, List<List<String>>>> onlyUpdatedBlocks = finalOutputProcessed.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
 		
 		@Override
 		public Boolean call(Tuple2<String, List<List<String>>> tuple) throws Exception {
-			HashSet<String> x = broadcastBlocksUpdated.getValue();
-			List<String> list = broadcastVar.value();
-			System.out.println(x.size());
-			if (broadcastBlocksUpdated.getValue().contains(tuple._1())) {
+	        HashSet<String> checkedBlocks = blacklist.value();
+	        droppedWordsCounter.setValue(new HashSet<String>());
+	        System.out.println(checkedBlocks.size());
+	        
+	        if (checkedBlocks.contains(tuple._1())) {
 				return true;
+			} else {
+				return false;
 			}
-			return false;
 		}
 	});
     
@@ -289,9 +303,9 @@ public class PMSD2 {
 			
 			if (maxSize > 0) {
 				double x = (double)intersect.size()/maxSize;
-				if (x>1) {
-					System.out.println();
-				}
+//				if (x>1) {
+//					System.out.println();
+//				}
 				return x;
 			} else {
 				return 0;
@@ -304,80 +318,6 @@ public class PMSD2 {
     JavaPairDStream<String, Iterable<String>> similaritiesGrouped = similarities.groupByKey();
     
     
-    
-//    similaritiesGrouped.foreachRDD(rdd -> {
-//      System.out.println("Batch size: " + rdd.count());
-//      rdd.foreach(e -> System.out.println(e));
-//    });
-    
-//    //coloca as tuplas no formato <e1, e2 = 0.65> (calcula similaridade)
-//    JavaPairDStream<String, String> similarities = blockPreprocessed.flatMapToPair(new PairFlatMapFunction<Tuple2<String,Iterable<List<String>>>, String, String>() {
-//
-//		@Override
-//		public Iterator<Tuple2<String, String>> call(Tuple2<String, Iterable<List<String>>> input) throws Exception {
-//			List<Tuple2<String, String>> output = new ArrayList<Tuple2<String, String>>();
-//			
-//			List<List<String>> listOfEntitiesToCompare = StreamSupport.stream(input._2().spliterator(), false).collect(Collectors.toList());
-//			
-//			for (int i = 0; i < listOfEntitiesToCompare.size(); i++) {
-//				List<String> ent1 = listOfEntitiesToCompare.get(i);
-//				for (int j = i+1; j < listOfEntitiesToCompare.size(); j++) {
-//					List<String> ent2 = listOfEntitiesToCompare.get(j);
-//					if (ent1.size() >= 2 && ent2.size() >= 2) {
-//						String idEnt1 = ent1.get(0);
-//						String idEnt2 = ent2.get(0);
-//						double similarity = calculateSimilarity(ent1, ent2);
-//						Tuple2<String, String> pair = new Tuple2<String, String>(idEnt1, idEnt2 + " = " + similarity);
-//						output.add(pair);
-//					}
-//					
-//				}
-//			}
-//			
-//			return output.iterator();
-//		}
-//
-//		private double calculateSimilarity(List<String> ent1, List<String> ent2) {
-////			ent1.remove(0);
-////			ent2.remove(0);
-//			
-//			int maxSize = Math.max(ent1.size()-1, ent2.size()-1);
-//			List<String> intersect = new ArrayList<String>(ent1);
-//			intersect.retainAll(ent2);
-//			if (maxSize > 0) {
-//				return intersect.size()/maxSize;
-//			} else {
-//				return 0;
-//			}
-//			
-//		}
-//	});
-    
-    //salva as similaridades na memória (acumulativa) e imprime.
-//    Function3<String, Optional<String>, State<List<String>>, Tuple2<String, List<String>>>  mappingFunctionSimilarities = (key, similarity, state) -> {
-//    	List<String> count = (state.exists() ? state.get() : new ArrayList<String>());
-//    	count.add(similarity.get());
-//        Tuple2<String, List<String>> thisOne = new Tuple2<>(key, count);
-//        state.update(count);
-//        return thisOne;
-//    };
-//    
-//    //save in state
-//    JavaMapWithStateDStream<String, String, List<String>, Tuple2<String, List<String>>> finalOutputSimilarities =
-//    		similarities.mapWithState(StateSpec.function(mappingFunctionSimilarities));
-//    
-//    
-//    finalOutputSimilarities.foreachRDD(rdd -> {
-//        System.out.println("Batch size: " + rdd.count());
-//        rdd.foreach(e -> System.out.println(e));
-//      });
-    	
-    	
-    
-//    similarities.foreachRDD(rdd -> {
-//      System.out.println("Batch size: " + rdd.count());
-//      rdd.foreach(e -> System.out.println(e));
-//    });
     
     
     //pruning phase
@@ -401,9 +341,9 @@ public class PMSD2 {
 			for (String value : tuple._2()) {
 				double weight = Double.parseDouble(value.split("\\=")[1]);
 				if (weight >= pruningWeight) {
-					if (weight == 0) {
-						System.out.println();
-					}
+//					if (weight == 0) {
+//						System.out.println();
+//					}
 					output.add(new Tuple2<String, String>(tuple._1(), value));
 				}
 			}
@@ -416,6 +356,12 @@ public class PMSD2 {
     		
     groupedPruned.foreachRDD(rdd -> {
         System.out.println("Batch size: " + rdd.count());
+        System.out.println("Size:" + size.value());
+        System.out.println("Collection:" + collection.value().size());
+        size.setValue(0);
+        collection.setValue(new HashSet<String>());
+//        droppedWordsCounter.setValue(new HashSet<String>());
+//        JavaDroppedWordsCounter.getInstance(sc).setValue(new HashSet<String>());
         rdd.foreach(e -> System.out.println(e));
       });
     

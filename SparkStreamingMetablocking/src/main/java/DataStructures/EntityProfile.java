@@ -45,7 +45,7 @@ public class EntityProfile implements Serializable {
 	 */
 	public EntityProfile(String csvLine, String separator) {
 		String[] parts = csvLine.split(separator);
-		key = Integer.valueOf(parts[0]);
+		key = Integer.valueOf(parts[0].hashCode());//Integer.valueOf(parts[0]);
 		entityUrl = parts[1];
 		attributes = new HashSet();
 		for (int i = 1; i < parts.length; i++) {//the first element is the key (avoid!)
