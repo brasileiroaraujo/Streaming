@@ -18,7 +18,6 @@ import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.api.java.function.PairFunction;
@@ -47,7 +46,7 @@ import streaming.util.JavaWordBlacklist;
 
 
 //Parallel-based Metablockig for Streaming Data
-public class PMSD5 {
+public class PMSDUpdateBased {
   public static void main(String[] args) {
     //
     // The "modern" way to initialize Spark is to create a SparkSession
@@ -60,8 +59,6 @@ public class PMSD5 {
         .master("local[4]")
         .getOrCreate();
     
-//    ContextCleaner cleaner = new ContextCleaner(spark.sparkContext());
-
     //
     // Operating on a raw RDD actually requires access to the more low
     // level SparkContext -- get the special Java version for convenience
@@ -80,8 +77,8 @@ public class PMSD5 {
     ssc.checkpoint(checkpointPath);
 
     // use the utility class to produce a sequence of 10 files, each containing 5(100) records
-//    CSVFileStreamGeneratorPMSD fm = new CSVFileStreamGeneratorPMSD("inputs/dataset2_gp", 1, 5, 300);
-    CSVFileStreamGeneratorER fm = new CSVFileStreamGeneratorER(1, 5, 300);
+    CSVFileStreamGeneratorPMSD fm = new CSVFileStreamGeneratorPMSD("inputs/dataset2_gp", 1, 5, 300);
+//    CSVFileStreamGeneratorER fm = new CSVFileStreamGeneratorER(1, 5, 300);
     // create the stream, which will contain the rows of the individual files as strings
     // -- notice we can create the stream even though this directory won't have any data until we call
     // fm.makeFiles() below
@@ -89,7 +86,7 @@ public class PMSD5 {
 
     // use a simple transformation to create a derived stream -- the original stream of Records is parsed
     // to produce a stream of KeyAndValue objects
-    JavaDStream<EntityProfile> streamOfItems = streamOfRecords.map(s -> new EntityProfile(s, ","));
+    JavaDStream<EntityProfile> streamOfItems = streamOfRecords.map(s -> new EntityProfile(s, ";"));
     
 
     JavaPairDStream<String, EntityProfile> streamOfPairs =
@@ -149,13 +146,10 @@ public class PMSD5 {
 			List<String> listOfBlocks = StreamSupport.stream(input._2().spliterator(), false).collect(Collectors.toList());
 			listOfBlocks.add(0, input._1());
 			
-//			HashSet<String> setB = new HashSet<String>();
 			for (String block : input._2()) {
 				Tuple2<String, List<String>> pair = new Tuple2<String, List<String>>(block, listOfBlocks);
-//				setB.add(block);
 				output.add(pair);
 			}
-//			blocksUpdated.add(setB);
 			return output.iterator();
 		}
 	});
@@ -163,72 +157,51 @@ public class PMSD5 {
     
     //coloca as tuplas no formato <b1, [(e1, b1, b2), (e2, b1), (e3, b1, b2)]>
     JavaPairDStream<String, Iterable<List<String>>> blockPreprocessed = blockEntityAndAllBlocks.groupByKey();
-    blockPreprocessed.foreachRDD(new VoidFunction<JavaPairRDD<String,Iterable<List<String>>>>() {
-		
-		@Override
-		public void call(JavaPairRDD<String, Iterable<List<String>>> t) throws Exception {
-			System.out.println("--------------New blocks---------------");
-			t.foreach(new VoidFunction<Tuple2<String,Iterable<List<String>>>>() {
-				
-				@Override
-				public void call(Tuple2<String, Iterable<List<String>>> t) throws Exception {
-					System.out.println(t);
-					
-				}
-			});
-			
-		}
-	});
     
     
-//    JavaRDD<Tuple2<String, Iterable<List<String>>>> rddList = sc.sc().emptyRDD();
-//    blockPreprocessed.wrapRDD(rddList.rdd());
-//    System.out.println(rddList.count());
-//    List<String> listMaster = rddList.map(new Function<Tuple2<String,Iterable<List<String>>>, String>() {
-//
+    //print the entities in each stream
+//    blockPreprocessed.foreachRDD(new VoidFunction<JavaPairRDD<String,Iterable<List<String>>>>() {
+//		
 //		@Override
-//		public String call(Tuple2<String, Iterable<List<String>>> v1) throws Exception {
-//			return v1._1();
+//		public void call(JavaPairRDD<String, Iterable<List<String>>> t) throws Exception {
+//			System.out.println("--------------New blocks---------------");
+//			t.foreach(new VoidFunction<Tuple2<String,Iterable<List<String>>>>() {
+//				
+//				@Override
+//				public void call(Tuple2<String, Iterable<List<String>>> t) throws Exception {
+//					System.out.println(t);
+//					
+//				}
+//			});
+//			
 //		}
-//	}).collect();
-//    Broadcast<List<String>> updatedKeyBlocks = sc.broadcast(listMaster);
-
-//    blockPreprocessed.map(new Function<Tuple2<String,Iterable<List<String>>>, String>() {
-//
-//		@Override
-//		public String call(Tuple2<String, Iterable<List<String>>> v1) throws Exception {
-//			return v1._1();
-//		}
-//	}).rdd;
+//	});
     
     
- 
-    Function2<List<Iterable<List<String>>>, Optional<List<List<String>>>, Optional<List<List<String>>>> updateFunction =
-            new Function2<List<Iterable<List<String>>>, Optional<List<List<String>>>, Optional<List<List<String>>>>() {
-				@Override
-				public Optional<List<List<String>>> call(List<Iterable<List<String>>> values,
-						Optional<List<List<String>>> state) throws Exception {
-					List<List<String>> count = state.or(new ArrayList<List<String>>());
-					for (Iterable<List<String>> listBlocks : values) {
-						List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.spliterator(), false).collect(Collectors.toList());
-				    	count.addAll(listOfBlocks);
-					}
-			    	
-					return Optional.of(count);
-				}
+    
+    Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
+    			mappingFunctionBlockPreprocessed = (key, listBlocks, state) -> {
+    	List<List<String>> count = (state.exists() ? state.get() : new ArrayList<List<String>>());
+    	List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.get().spliterator(), false).collect(Collectors.toList());
+    	count.addAll(listOfBlocks);
+        Tuple2<String, List<List<String>>> thisOne = new Tuple2<>(key, count);
+        state.update(count);
+        return thisOne;
     };
     
-    //save in state
-    JavaPairDStream<String, List<List<String>>> finalOutputProcessed =
-    		blockPreprocessed.updateStateByKey(updateFunction);
+    //save in state.
+    //Using mapWithState, we just manipulate the update entities/blocks. It's a property provided by mapWithState. UpdateState manipulates with all data (force brute).
+    JavaMapWithStateDStream<String, Iterable<List<String>>, List<List<String>>, Tuple2<String, List<List<String>>>> finalOutputProcessed =
+    		blockPreprocessed.mapWithState(StateSpec.function(mappingFunctionBlockPreprocessed));
     
 
 
-    
+//    //print the entities stored in state part1
 //    DStream<Tuple2<String, List<List<String>>>> fin_Counts = finalOutputProcessed.dstream();
 //    JavaDStream<Tuple2<String, List<List<String>>>> javaDStream = 
 //    		   JavaDStream.fromDStream(fin_Counts,
 //    		                                    scala.reflect.ClassTag$.MODULE$.apply(String.class));
+//    //print the entities stored in state part2
 //    javaDStream.foreachRDD(new VoidFunction<JavaRDD<Tuple2<String,List<List<String>>>>>() {
 //		
 //		@Override
@@ -251,76 +224,17 @@ public class PMSD5 {
     
     
     
-    JavaPairDStream<String, List<List<String>>> finalOutputProcessedDStream = finalOutputProcessed.transformToPair(new Function<JavaPairRDD<String,List<List<String>>>, JavaPairRDD<String, List<List<String>>>>() {
-
+    //convert to JavaPairDStream
+    JavaDStream<Tuple2<String, List<List<String>>>> onlyUpdatedEntityBlocksToCompare = finalOutputProcessed.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
 		@Override
-		public JavaPairRDD<String, List<List<String>>> call(JavaPairRDD<String, List<List<String>>> v1) throws Exception {
-			return v1;
-		}
-	});
-    
-    finalOutputProcessedDStream.foreachRDD(new VoidFunction<JavaPairRDD<String,List<List<String>>>>() {
-		
-		@Override
-		public void call(JavaPairRDD<String, List<List<String>>> t) throws Exception {
-			System.out.println("--------------Accumulado blocks---------------");
-			t.foreach(new VoidFunction<Tuple2<String,List<List<String>>>>() {
-				
-				@Override
-				public void call(Tuple2<String, List<List<String>>> t) throws Exception {
-					System.out.println(t);
-					
-				}
-			});
-			
-		}
-	});
-    
-    finalOutputProcessedDStream.foreachRDD(new VoidFunction<JavaPairRDD<String,List<List<String>>>>() {
-		
-		@Override
-		public void call(JavaPairRDD<String, List<List<String>>> t) throws Exception {
-			System.out.println(t.count());
-		}
-	});
-    
-    //select only the updated blocks (in this turn)
-    JavaPairDStream<String, Tuple2<List<List<String>>, Iterable<List<String>>>> onlyUpdatedBlocks = finalOutputProcessedDStream.join(blockPreprocessed).filter(new Function<Tuple2<String,Tuple2<List<List<String>>,Iterable<List<String>>>>, Boolean>() {
-		
-		@Override
-		public Boolean call(Tuple2<String, Tuple2<List<List<String>>, Iterable<List<String>>>> v1) throws Exception {
-			if ((v1._2()._2() instanceof Collection<?>)) {
-				ArrayList<List<String>> list = new ArrayList(((Collection<?>)(v1._2()._2())));
-				if (list.size() > 0) {
-					return true;
-				}
-			}
-			return false;
-		}
-	});
-    
-    
-    onlyUpdatedBlocks.foreachRDD(new VoidFunction<JavaPairRDD<String,Tuple2<List<List<String>>,Iterable<List<String>>>>>() {
-		
-		@Override
-		public void call(JavaPairRDD<String, Tuple2<List<List<String>>, Iterable<List<String>>>> t) throws Exception {
-			System.out.println(t.count());
-			
-		}
-	});
-    
-    JavaPairDStream<String, List<List<String>>> onlyUpdatedBlocksPair = onlyUpdatedBlocks.mapToPair(new PairFunction<Tuple2<String,Tuple2<List<List<String>>,Iterable<List<String>>>>, String, List<List<String>>>() {
-
-		@Override
-		public Tuple2<String, List<List<String>>> call(
-				Tuple2<String, Tuple2<List<List<String>>, Iterable<List<String>>>> t) throws Exception {
-			return new Tuple2<String, List<List<String>>>(t._1(), t._2()._1());
+		public Boolean call(Tuple2<String, List<List<String>>> v1) throws Exception {
+			return true;
 		}
 	});
     		
     
 	//coloca as tuplas no formato <e1, e2 = 0.65> (calcula similaridade)
-    JavaPairDStream<String, String> similarities = onlyUpdatedBlocksPair.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
+    JavaPairDStream<String, String> similarities = onlyUpdatedEntityBlocksToCompare.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
     	
 		@Override
 		public Iterator<Tuple2<String, String>> call(Tuple2<String, List<List<String>>> input) throws Exception {
