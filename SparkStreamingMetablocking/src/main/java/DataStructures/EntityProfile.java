@@ -30,11 +30,14 @@ public class EntityProfile implements Serializable {
 	private final Set<Attribute> attributes;
 	private final String entityUrl;
 	private int key;
+	
+	private final String split1 = "<<>>";
+	private final String split2 = "#=#";
 
-	public EntityProfile(String url) {
-		entityUrl = url;
-		attributes = new HashSet();
-	}
+//	public EntityProfile(String url) {
+//		entityUrl = url;
+//		attributes = new HashSet();
+//	}
 
 	/**
 	 * Parse out of the format found in generated CSV files
@@ -50,6 +53,18 @@ public class EntityProfile implements Serializable {
 		attributes = new HashSet();
 		for (int i = 1; i < parts.length; i++) {//the first element is the key (avoid!)
 			attributes.add(new Attribute("", parts[i]));
+		}
+	}
+	
+	
+	public EntityProfile(String standardFormat) {
+		String[] parts = standardFormat.split(split1);
+		entityUrl = parts[0];
+		key = Integer.valueOf(parts[1]);
+		attributes = new HashSet();
+		for (int i = 2; i < parts.length; i++) {//the first element is the key (avoid!)
+			String[] nameValue = parts[i].split(split2);
+			attributes.add(new Attribute(nameValue[0], nameValue[1]));
 		}
 	}
 
@@ -77,4 +92,17 @@ public class EntityProfile implements Serializable {
 	public Set<Attribute> getAttributes() {
 		return attributes;
 	}
+
+	public String getStandardFormat() {
+		String output = "";
+		output += entityUrl + split1;//separete the attributes
+		output += key + split1;//separete the attributes
+		
+		for (Attribute attribute : attributes) {
+			output += attribute.getName() + split2 + attribute.getValue() + split1;
+		}
+				
+		return output;
+	}
+
 }
