@@ -1,54 +1,40 @@
 package KafkaIntegration;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.Accumulator;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
-import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
-import org.apache.spark.api.java.function.PairFunction;
-import org.apache.spark.api.java.function.VoidFunction;
-import org.apache.spark.api.java.function.VoidFunction2;
-import org.apache.spark.broadcast.Broadcast;
-import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.streaming.Duration;
-import org.apache.spark.streaming.State;
-import org.apache.spark.streaming.StateSpec;
-import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.api.java.JavaDStream;
-import org.apache.spark.streaming.api.java.JavaMapWithStateDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
+import org.apache.spark.streaming.api.java.JavaPairInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
-import org.apache.spark.streaming.dstream.DStream;
+import org.apache.spark.streaming.kafka.KafkaUtils;
 
 import DataStructures.Attribute;
 import DataStructures.EntityProfile;
+import kafka.serializer.StringDecoder;
 import scala.Tuple2;
-import streaming.util.CSVFileStreamGeneratorER;
-import streaming.util.CSVFileStreamGeneratorPMSD;
-import streaming.util.JavaDroppedWordsCounter;
-import streaming.util.JavaWordBlacklist;
+import streaming.util.AccumulatorParamSet;
 
 
 //Parallel-based Metablockig for Streaming Data
 public class PMSDBruteForceKafka {
-  public static void main(String[] args) {
+  public static void main(String[] args) throws InterruptedException {
     //
     // The "modern" way to initialize Spark is to create a SparkSession
     // although they really come from the world of Spark SQL, and Dataset
@@ -70,27 +56,22 @@ public class PMSDBruteForceKafka {
 
     // streams will produce data every second (note: it would be nice if this was Java 8's Duration class,
     // but it isn't -- it comes from org.apache.spark.streaming)
-    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(1000));
-
-    String checkpointPath = File.separator + "tmp" + File.separator + "LSWJ" + File.separator + "checkpoints";
-    File checkpointDir = new File(checkpointPath);
-    checkpointDir.mkdir();
-    checkpointDir.deleteOnExit();
-    ssc.checkpoint(checkpointPath);
-
-    // use the utility class to produce a sequence of 10 files, each containing 5(100) records
-    CSVFileStreamGeneratorPMSD fm = new CSVFileStreamGeneratorPMSD("inputs/dataset2_gp", 1, 5, 300);
-//    CSVFileStreamGeneratorER fm = new CSVFileStreamGeneratorER(1, 5, 300);
+    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(2000));
+    //checkpointing is necessary since states are used
+    ssc.checkpoint("checkpoints/");
     
-    
-    // create the stream, which will contain the rows of the individual files as strings
-    // -- notice we can create the stream even though this directory won't have any data until we call
-    // fm.makeFiles() below
-    JavaDStream<String> streamOfRecords = ssc.textFileStream(fm.getDestination().getAbsolutePath());
+
+    //kafka pool to receive streaming data 
+    Map<String, String> kafkaParams = new HashMap<>();
+    kafkaParams.put("metadata.broker.list", "localhost:9092");
+    Set<String> topics = Collections.singleton("PRIMEtopic");
+
+    JavaPairInputDStream<String, String> streamOfRecords = KafkaUtils.createDirectStream(ssc,
+            String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topics);
 
     // use a simple transformation to create a derived stream -- the original stream of Records is parsed
     // to produce a stream of KeyAndValue objects
-    JavaDStream<EntityProfile> streamOfItems = streamOfRecords.map(s -> new EntityProfile(s, ";"));
+    JavaDStream<EntityProfile> streamOfItems = streamOfRecords.map(s -> new EntityProfile(s._2()));
     
     //Reading from dataset (streaming)
     JavaPairDStream<String, EntityProfile> streamOfPairs =
@@ -241,7 +222,7 @@ public class PMSDBruteForceKafka {
 	});
     
     
-	
+    Accumulator<Integer> numberOfComparisons = sc.accumulator(0);
     
 	//coloca as tuplas no formato <e1, e2 = 0.65> (calcula similaridade)
     JavaPairDStream<String, String> similarities = entityBlocksToCompare.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
@@ -261,6 +242,7 @@ public class PMSDBruteForceKafka {
 						String idEnt1 = ent1.get(0);
 						String idEnt2 = ent2.get(0);
 						double similarity = calculateSimilarity(ent1, ent2);
+						numberOfComparisons.add(1);
 						
 						
 						Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
@@ -324,9 +306,6 @@ public class PMSDBruteForceKafka {
 			for (String value : tuple._2()) {
 				double weight = Double.parseDouble(value.split("\\=")[1]);
 				if (weight >= pruningWeight) {
-//					if (weight == 0) {
-//						System.out.println();
-//					}
 					output.add(new Tuple2<String, String>(tuple._1(), value));
 				}
 			}
@@ -338,57 +317,16 @@ public class PMSDBruteForceKafka {
     JavaPairDStream<String, Iterable<String>> groupedPruned = prunedOutput.groupByKey();
     		
     groupedPruned.foreachRDD(rdd -> {
+    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
         System.out.println("Batch size: " + rdd.count());
-        rdd.foreach(e -> System.out.println(e));
+//        rdd.foreach(e -> System.out.println(e));
       });
-    
     
     
     // start streaming
     System.out.println("*** about to start streaming");
     ssc.start();
-
-
-    Thread t = new Thread() {
-      public void run() {
-    	 try {
-              // A curious fact about files based streaming is that any files written
-              // before the first RDD is produced are ignored. So wait longer than
-              // that before producing files.
-              Thread.sleep(2000);
-
-              System.out.println("*** producing data");
-              // start producing files
-              fm.makeFiles();
-
-              // give it time to get processed
-              Thread.sleep(2000);
-
-              fm.makeFiles();
-              
-              // give it time to get processed
-              Thread.sleep(2000);
-              
-
-              fm.makeFiles();
-
-              // give it time to get processed
-              Thread.sleep(10000);
-        } catch (InterruptedException ie) {
-        } catch (IOException ioe) {
-          throw new RuntimeException("problem in background thread", ioe);
-        }
-        ssc.stop();
-        System.out.println("*** stopping streaming");
-      }
-    };
-    t.start();
-
-    try {
-      ssc.awaitTermination();
-    } catch (InterruptedException ie) {
-
-    }
+    ssc.awaitTermination();
     System.out.println("*** Streaming terminated");
   }
 

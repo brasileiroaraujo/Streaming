@@ -9,6 +9,7 @@ import java.io.FileInputStream;
 import java.io.ObjectInputStream;
 import java.util.ArrayList;
 import java.util.Properties;
+import java.util.Random;
 
 public class KafkaDataStreamingProducer {
 
@@ -17,6 +18,10 @@ public class KafkaDataStreamingProducer {
         props.put("bootstrap.servers", "localhost:9092");
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        
+//        int[] timers = {10, 25, 50, 100, 250, 500};
+        int[] timers = {100};
+        Random random = new Random();
         
         //CHOOSE THE INPUT PATH
         String INPUT_PATH = "inputs/dataset2_gp";
@@ -35,9 +40,9 @@ public class KafkaDataStreamingProducer {
 			e.printStackTrace();
 		}
         for (EntityProfile entityProfile : EntityList) {
-            ProducerRecord<String, String> record = new ProducerRecord<>("mytopic", entityProfile.getStandardFormat());
+            ProducerRecord<String, String> record = new ProducerRecord<>("PRIMEtopic", entityProfile.getStandardFormat());
             producer.send(record);
-            Thread.sleep(250);
+            Thread.sleep(timers[random.nextInt(timers.length)]);
         }
 
         producer.close();
