@@ -1,6 +1,9 @@
 package KafkaIntegration;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -12,28 +15,44 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.apache.spark.Accumulator;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
+import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
+import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.api.java.function.VoidFunction2;
+import org.apache.spark.broadcast.Broadcast;
+import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.streaming.Duration;
+import org.apache.spark.streaming.State;
+import org.apache.spark.streaming.StateSpec;
+import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.api.java.JavaDStream;
+import org.apache.spark.streaming.api.java.JavaMapWithStateDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaPairInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
+import org.apache.spark.streaming.dstream.DStream;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 
 import DataStructures.Attribute;
 import DataStructures.EntityProfile;
 import kafka.serializer.StringDecoder;
 import scala.Tuple2;
-import streaming.util.AccumulatorParamSet;
+import streaming.util.CSVFileStreamGeneratorER;
+import streaming.util.CSVFileStreamGeneratorPMSD;
+import streaming.util.JavaDroppedWordsCounter;
+import streaming.util.JavaWordBlacklist;
 
 
 //Parallel-based Metablockig for Streaming Data
-public class PMSDBruteForceKafka {
+public class PRIMEUpdateBasedKafka {
   public static void main(String[] args) throws InterruptedException {
     //
     // The "modern" way to initialize Spark is to create a SparkSession
@@ -46,7 +65,6 @@ public class PMSDBruteForceKafka {
         .master("local[4]")
         .getOrCreate();
     
-
     //
     // Operating on a raw RDD actually requires access to the more low
     // level SparkContext -- get the special Java version for convenience
@@ -73,7 +91,7 @@ public class PMSDBruteForceKafka {
     // to produce a stream of KeyAndValue objects
     JavaDStream<EntityProfile> streamOfItems = streamOfRecords.map(s -> new EntityProfile(s._2()));
     
-    //Reading from dataset (streaming)
+
     JavaPairDStream<String, EntityProfile> streamOfPairs =
         streamOfItems.flatMapToPair(new PairFlatMapFunction<EntityProfile, String, EntityProfile>() {
 			@Override
@@ -143,6 +161,7 @@ public class PMSDBruteForceKafka {
     //coloca as tuplas no formato <b1, [(e1, b1, b2), (e2, b1), (e3, b1, b2)]>
     JavaPairDStream<String, Iterable<List<String>>> blockPreprocessed = blockEntityAndAllBlocks.groupByKey();
     
+    
     //print the entities in each stream
 //    blockPreprocessed.foreachRDD(new VoidFunction<JavaPairRDD<String,Iterable<List<String>>>>() {
 //		
@@ -163,42 +182,34 @@ public class PMSDBruteForceKafka {
     
     
     
- 
-    Function2<List<Iterable<List<String>>>, Optional<List<List<String>>>, Optional<List<List<String>>>> updateFunction =
-            new Function2<List<Iterable<List<String>>>, Optional<List<List<String>>>, Optional<List<List<String>>>>() {
-				@Override
-				public Optional<List<List<String>>> call(List<Iterable<List<String>>> values,
-						Optional<List<List<String>>> state) throws Exception {
-					List<List<String>> count = state.or(new ArrayList<List<String>>());
-					for (Iterable<List<String>> listBlocks : values) {
-						List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.spliterator(), false).collect(Collectors.toList());
-				    	count.addAll(listOfBlocks);
-					}
-			    	
-					return Optional.of(count);
-				}
+    Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
+    			mappingFunctionBlockPreprocessed = (key, listBlocks, state) -> {
+    	List<List<String>> count = (state.exists() ? state.get() : new ArrayList<List<String>>());
+    	List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.get().spliterator(), false).collect(Collectors.toList());
+    	count.addAll(listOfBlocks);
+        Tuple2<String, List<List<String>>> thisOne = new Tuple2<>(key, count);
+        state.update(count);
+        return thisOne;
     };
     
-    //save in state
-    JavaPairDStream<String, List<List<String>>> finalOutputProcessed =  blockPreprocessed.updateStateByKey(updateFunction);
+    //save in state.
+    //Using mapWithState, we just manipulate the update entities/blocks. It's a property provided by mapWithState. UpdateState manipulates with all data (force brute).
+    JavaMapWithStateDStream<String, Iterable<List<String>>, List<List<String>>, Tuple2<String, List<List<String>>>> finalOutputProcessed =
+    		blockPreprocessed.mapWithState(StateSpec.function(mappingFunctionBlockPreprocessed));
     
 
-    
-    
+
 //    //print the entities stored in state part1
-//    JavaPairDStream<String, List<List<String>>> finalOutputProcessedDStream = finalOutputProcessed.transformToPair(new Function<JavaPairRDD<String,List<List<String>>>, JavaPairRDD<String, List<List<String>>>>() {
-//
-//		@Override
-//		public JavaPairRDD<String, List<List<String>>> call(JavaPairRDD<String, List<List<String>>> v1) throws Exception {
-//			return v1;
-//		}
-//	});
+//    DStream<Tuple2<String, List<List<String>>>> fin_Counts = finalOutputProcessed.dstream();
+//    JavaDStream<Tuple2<String, List<List<String>>>> javaDStream = 
+//    		   JavaDStream.fromDStream(fin_Counts,
+//    		                                    scala.reflect.ClassTag$.MODULE$.apply(String.class));
 //    //print the entities stored in state part2
-//    finalOutputProcessedDStream.foreachRDD(new VoidFunction<JavaPairRDD<String,List<List<String>>>>() {
+//    javaDStream.foreachRDD(new VoidFunction<JavaRDD<Tuple2<String,List<List<String>>>>>() {
 //		
 //		@Override
-//		public void call(JavaPairRDD<String, List<List<String>>> t) throws Exception {
-//			System.out.println("--------------Accumulado blocks---------------");
+//		public void call(JavaRDD<Tuple2<String, List<List<String>>>> t) throws Exception {
+//			System.out.println("--------------Accumulado Completo---------------");
 //			t.foreach(new VoidFunction<Tuple2<String,List<List<String>>>>() {
 //				
 //				@Override
@@ -213,19 +224,21 @@ public class PMSDBruteForceKafka {
     
     
     
+    
+    
+    
     //convert to JavaPairDStream
-    JavaPairDStream<String, List<List<String>>> entityBlocksToCompare = finalOutputProcessed.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
+    JavaDStream<Tuple2<String, List<List<String>>>> onlyUpdatedEntityBlocksToCompare = finalOutputProcessed.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
 		@Override
 		public Boolean call(Tuple2<String, List<List<String>>> v1) throws Exception {
 			return true;
 		}
 	});
-    
-    
+    		
     Accumulator<Integer> numberOfComparisons = sc.accumulator(0);
     
 	//coloca as tuplas no formato <e1, e2 = 0.65> (calcula similaridade)
-    JavaPairDStream<String, String> similarities = entityBlocksToCompare.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
+    JavaPairDStream<String, String> similarities = onlyUpdatedEntityBlocksToCompare.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
     	
 		@Override
 		public Iterator<Tuple2<String, String>> call(Tuple2<String, List<List<String>>> input) throws Exception {
@@ -306,6 +319,9 @@ public class PMSDBruteForceKafka {
 			for (String value : tuple._2()) {
 				double weight = Double.parseDouble(value.split("\\=")[1]);
 				if (weight >= pruningWeight) {
+//					if (weight == 0) {
+//						System.out.println();
+//					}
 					output.add(new Tuple2<String, String>(tuple._1(), value));
 				}
 			}
@@ -321,6 +337,7 @@ public class PMSDBruteForceKafka {
         System.out.println("Batch size: " + rdd.count());
 //        rdd.foreach(e -> System.out.println(e));
       });
+    
     
     
     // start streaming
