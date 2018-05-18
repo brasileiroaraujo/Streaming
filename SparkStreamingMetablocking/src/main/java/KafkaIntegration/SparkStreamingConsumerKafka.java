@@ -18,10 +18,11 @@ import kafka.serializer.StringDecoder;
 public class SparkStreamingConsumerKafka {
 
     public static void main(String[] args) throws InterruptedException {
-
+    	System.setProperty("hadoop.home.dir", "K:\\winutils");
+    	
         SparkConf conf = new SparkConf()
                 .setAppName("kafka-sandbox")
-                .setMaster("local[*]");
+                .setMaster("local[2]");
         JavaSparkContext sc = new JavaSparkContext(conf);
         JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(2000));
 
@@ -32,10 +33,13 @@ public class SparkStreamingConsumerKafka {
         JavaPairInputDStream<String, String> directKafkaStream = KafkaUtils.createDirectStream(ssc,
                 String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topics);
         
+//        directKafkaStream.dstream().saveAsTextFiles("outputs/stream", "");
+        
         directKafkaStream.foreachRDD(rdd -> {
             System.out.println("--- New RDD with " + rdd.partitions().size()
                     + " partitions and " + rdd.count() + " records");
-            rdd.foreach(record -> System.out.println(new EntityProfile(record._2()).isSource()));
+//            rdd.foreach(record -> System.out.println(new EntityProfile(record._2()).isSource()));
+            rdd.saveAsTextFile("outputs/teste1/");
         });
         
         ssc.start();

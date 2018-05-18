@@ -38,6 +38,7 @@ import scala.Tuple2;
 //Parallel-based Metablockig for Streaming Data
 public class PRIMEBruteForceKafka {
   public static void main(String[] args) throws InterruptedException {
+	  System.setProperty("hadoop.home.dir", "K:\\winutils");
     //
     // The "modern" way to initialize Spark is to create a SparkSession
     // although they really come from the world of Spark SQL, and Dataset
@@ -46,7 +47,7 @@ public class PRIMEBruteForceKafka {
     SparkSession spark = SparkSession
         .builder()
         .appName("streaming-Filtering")
-        .master("local[1]")
+        .master("local[2]")
         .getOrCreate();
     
 
@@ -330,38 +331,42 @@ public class PRIMEBruteForceKafka {
 		}
 	});
     
+    
     JavaPairDStream<String, Iterable<String>> groupedPruned = prunedOutput.groupByKey();
     
-    groupedPruned.flatMap(new FlatMapFunction<Tuple2<String,Iterable<String>>, String>() {
-
-		@Override
-		public Iterator<String> call(Tuple2<String, Iterable<String>> t) throws Exception {
-			String out = "";
-			List<String> listout = new ArrayList<String>();
-			out += t._1();
-			for (String string : t._2()) {
-				out += string;
-			}
-			listout.add(out);
-			return listout.iterator();
-		}
-	}).foreachRDD(rdd ->{
-    	System.out.println("Batch size: " + rdd.count());
-	      if(!rdd.isEmpty()){
-//	    	 List<Tuple2<String, Iterable<String>>> x = rdd.collect();
-	         rdd.saveAsTextFile("outputs/teste1/");
-	      }
-	});
+    
+//    groupedPruned.flatMap(new FlatMapFunction<Tuple2<String,Iterable<String>>, String>() {
+//
+//		@Override
+//		public Iterator<String> call(Tuple2<String, Iterable<String>> t) throws Exception {
+//			String out = "";
+//			List<String> listout = new ArrayList<String>();
+//			out += t._1();
+//			for (String string : t._2()) {
+//				out += string;
+//			}
+//			listout.add(out);
+//			return listout.iterator();
+//		}
+//	}).foreachRDD(rdd ->{
+//    	System.out.println("Batch size: " + rdd.count());
+////    	rdd.saveAsTextFile("K:\\output");
+//    	rdd.saveAsTextFile("outputs/teste1/");
+////	      if(!rdd.isEmpty()){
+//////	    	 List<Tuple2<String, Iterable<String>>> x = rdd.collect();
+////	         rdd.saveAsTextFile("outputs/teste1/");
+////	      }
+//	});
     
     
 //    groupedPruned.dstream().saveAsTextFiles("outputs/myoutput","txt");
 
     		
-//    groupedPruned.foreachRDD(rdd -> {
-//    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
-//        System.out.println("Batch size: " + rdd.count());
-////        rdd.foreach(e -> System.out.println(e));
-//    });
+    groupedPruned.foreachRDD(rdd -> {
+    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+        System.out.println("Batch size: " + rdd.count());
+//        rdd.foreach(e -> System.out.println(e));
+    });
     
 //    groupedPruned.foreachRDD(rdd ->{
 //        if(!rdd.isEmpty()){
@@ -374,7 +379,6 @@ public class PRIMEBruteForceKafka {
     System.out.println("*** about to start streaming");
     ssc.start();
     ssc.awaitTermination();
-    sc.stop();
     System.out.println("*** Streaming terminated");
   }
 
