@@ -23,28 +23,51 @@ public class KafkaDataStreamingProducer {
         int[] timers = {100};
         Random random = new Random();
         
-        //CHOOSE THE INPUT PATH
-        String INPUT_PATH = "inputs/dataset2_gp";
+        //TOPIC
+        final String topicName = "mytopic";
+        
+        //CHOOSE THE INPUT PATHS
+        String INPUT_PATH1 = "inputs/dataset1_abt";
+        String INPUT_PATH2 = "inputs/dataset2_buy";
 
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
-        ArrayList<EntityProfile> EntityList = null;
+        ArrayList<EntityProfile> EntityListSource = null;
+        ArrayList<EntityProfile> EntityListTarget = null;
         
 		// reading the files
-		ObjectInputStream ois;
+		ObjectInputStream ois1;
+		ObjectInputStream ois2;
 		try {
-			ois = new ObjectInputStream(new FileInputStream(INPUT_PATH));
-			EntityList = (ArrayList<EntityProfile>) ois.readObject();
-			ois.close();
+			ois1 = new ObjectInputStream(new FileInputStream(INPUT_PATH1));
+			ois2 = new ObjectInputStream(new FileInputStream(INPUT_PATH2));
+			EntityListSource = (ArrayList<EntityProfile>) ois1.readObject();
+			EntityListTarget = (ArrayList<EntityProfile>) ois2.readObject();
+			ois1.close();
+			ois2.close();
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-        for (EntityProfile entityProfile : EntityList) {
-            ProducerRecord<String, String> record = new ProducerRecord<>("PRIMEtopic", entityProfile.getStandardFormat());
-            producer.send(record);
+		
+		for (int i = 0; i < Math.max(EntityListSource.size(), EntityListTarget.size()); i++) {
+			if (i < EntityListSource.size()) {
+				EntityProfile entitySource = EntityListSource.get(i);
+				entitySource.setSource(true);
+				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat());
+	            producer.send(record);
+			}
+			
+			if (i < EntityListTarget.size()) {
+				EntityProfile entityTarget = EntityListTarget.get(i);
+				entityTarget.setSource(false);
+				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat());
+	            producer.send(record2);
+			}
+			
             Thread.sleep(timers[random.nextInt(timers.length)]);
-        }
+		}
 
         producer.close();
+        System.out.println("----------------------------END------------------------------");
     }
 }

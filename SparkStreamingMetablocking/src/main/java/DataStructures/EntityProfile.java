@@ -29,6 +29,7 @@ public class EntityProfile implements Serializable {
 
 	private final Set<Attribute> attributes;
 	private final String entityUrl;
+	private boolean isSource;
 	private int key;
 	
 	private final String split1 = "<<>>";
@@ -59,10 +60,11 @@ public class EntityProfile implements Serializable {
 	
 	public EntityProfile(String standardFormat) {
 		String[] parts = standardFormat.split(split1);
-		entityUrl = parts[0];
-		key = Integer.valueOf(parts[1]);
+		isSource = Boolean.parseBoolean(parts[0]);
+		entityUrl = parts[1];
+		key = Integer.valueOf(parts[2]);
 		attributes = new HashSet();
-		for (int i = 2; i < parts.length; i++) {//the first element is the key (avoid!)
+		for (int i = 3; i < parts.length; i++) {//the first element is the key (avoid!)
 			String[] nameValue = parts[i].split(split2);
 			attributes.add(new Attribute(nameValue[0], nameValue[1]));
 		}
@@ -95,14 +97,25 @@ public class EntityProfile implements Serializable {
 
 	public String getStandardFormat() {
 		String output = "";
-		output += entityUrl + split1;//separete the attributes
-		output += key + split1;//separete the attributes
+		output += isSource + split1;
+		output += entityUrl + split1;//separate the attributes
+		output += key + split1;//separate the attributes
 		
 		for (Attribute attribute : attributes) {
 			output += attribute.getName() + split2 + attribute.getValue() + split1;
 		}
 				
 		return output;
+	}
+
+
+	public boolean isSource() {
+		return isSource;
+	}
+
+
+	public void setSource(boolean isSource) {
+		this.isSource = isSource;
 	}
 
 }

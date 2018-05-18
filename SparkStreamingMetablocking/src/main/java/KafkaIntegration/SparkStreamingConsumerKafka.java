@@ -27,7 +27,7 @@ public class SparkStreamingConsumerKafka {
 
         Map<String, String> kafkaParams = new HashMap<>();
         kafkaParams.put("metadata.broker.list", "localhost:9092");
-        Set<String> topics = Collections.singleton("PRIMEtopic");
+        Set<String> topics = Collections.singleton("mytopic");
 
         JavaPairInputDStream<String, String> directKafkaStream = KafkaUtils.createDirectStream(ssc,
                 String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topics);
@@ -35,7 +35,7 @@ public class SparkStreamingConsumerKafka {
         directKafkaStream.foreachRDD(rdd -> {
             System.out.println("--- New RDD with " + rdd.partitions().size()
                     + " partitions and " + rdd.count() + " records");
-            rdd.foreach(record -> System.out.println(new EntityProfile(record._2()).getEntityUrl()));
+            rdd.foreach(record -> System.out.println(new EntityProfile(record._2()).isSource()));
         });
         
         ssc.start();

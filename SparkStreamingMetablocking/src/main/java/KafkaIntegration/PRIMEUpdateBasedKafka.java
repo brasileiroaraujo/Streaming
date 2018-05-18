@@ -74,6 +74,10 @@ public class PRIMEUpdateBasedKafka {
 
     // streams will produce data every second (note: it would be nice if this was Java 8's Duration class,
     // but it isn't -- it comes from org.apache.spark.streaming)
+    
+    
+    //We have configured the period to 2 seconds (2000 ms). 
+    //Notice that Spark Streaming is not designed for periods shorter than about half a second. If you need a shorter delay in your processing, try Flink or Storm instead.
     JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(2000));
     //checkpointing is necessary since states are used
     ssc.checkpoint("checkpoints/");
@@ -82,7 +86,7 @@ public class PRIMEUpdateBasedKafka {
     //kafka pool to receive streaming data 
     Map<String, String> kafkaParams = new HashMap<>();
     kafkaParams.put("metadata.broker.list", "localhost:9092");
-    Set<String> topics = Collections.singleton("PRIMEtopic");
+    Set<String> topics = Collections.singleton("mytopic");
 
     JavaPairInputDStream<String, String> streamOfRecords = KafkaUtils.createDirectStream(ssc,
             String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topics);
@@ -126,7 +130,12 @@ public class PRIMEUpdateBasedKafka {
 			
 			for (EntityProfile streamingEntity : input._2()) {
 				String[] urlSplit = streamingEntity.getEntityUrl().split("/");
-				Tuple2<String, String> pair = new Tuple2<String, String>(streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());
+				Tuple2<String, String> pair;
+				if (streamingEntity.isSource()) {
+					pair = new Tuple2<String, String>("S" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"S" to source entities
+				} else {
+					pair = new Tuple2<String, String>("T" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"T" to source entities
+				}
 				output.add(pair);
 			}
 			
@@ -251,17 +260,20 @@ public class PRIMEUpdateBasedKafka {
 				List<String> ent1 = listOfEntitiesToCompare.get(i);
 				for (int j = i+1; j < listOfEntitiesToCompare.size(); j++) {
 					List<String> ent2 = listOfEntitiesToCompare.get(j);
-					if (ent1.size() >= 2 && ent2.size() >= 2) {
-						String idEnt1 = ent1.get(0);
-						String idEnt2 = ent2.get(0);
-						double similarity = calculateSimilarity(ent1, ent2);
-						numberOfComparisons.add(1);
+					if (ent1.get(0).charAt(0) != ent2.get(0).charAt(0)) {//compare only entities of different datasources
 						
-						
-						Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
-						Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
-						output.add(pair1);
-						output.add(pair2);
+						if (ent1.size() >= 2 && ent2.size() >= 2) {
+							String idEnt1 = ent1.get(0);
+							String idEnt2 = ent2.get(0);
+							double similarity = calculateSimilarity(ent1, ent2);
+							numberOfComparisons.add(1);
+							
+							
+							Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
+							Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
+							output.add(pair1);
+							output.add(pair2);
+						}
 					}
 					
 				}

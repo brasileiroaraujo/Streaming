@@ -12,11 +12,15 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.apache.spark.Accumulator;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
+import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
+import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.api.java.JavaDStream;
@@ -42,7 +46,7 @@ public class PRIMEBruteForceKafka {
     SparkSession spark = SparkSession
         .builder()
         .appName("streaming-Filtering")
-        .master("local[4]")
+        .master("local[1]")
         .getOrCreate();
     
 
@@ -55,7 +59,11 @@ public class PRIMEBruteForceKafka {
 
     // streams will produce data every second (note: it would be nice if this was Java 8's Duration class,
     // but it isn't -- it comes from org.apache.spark.streaming)
-    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(2000));
+    
+    //We have configured the period to 8 seconds (8000 ms). 
+    //Notice that Spark Streaming is not designed for periods shorter than about half a second. If you need a shorter delay in your processing, try Flink or Storm instead.
+    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(8000));
+    
     //checkpointing is necessary since states are used
     ssc.checkpoint("checkpoints/");
     
@@ -63,7 +71,7 @@ public class PRIMEBruteForceKafka {
     //kafka pool to receive streaming data 
     Map<String, String> kafkaParams = new HashMap<>();
     kafkaParams.put("metadata.broker.list", "localhost:9092");
-    Set<String> topics = Collections.singleton("PRIMEtopic");
+    Set<String> topics = Collections.singleton("mytopic");
 
     JavaPairInputDStream<String, String> streamOfRecords = KafkaUtils.createDirectStream(ssc,
             String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topics);
@@ -107,7 +115,13 @@ public class PRIMEBruteForceKafka {
 			
 			for (EntityProfile streamingEntity : input._2()) {
 				String[] urlSplit = streamingEntity.getEntityUrl().split("/");
-				Tuple2<String, String> pair = new Tuple2<String, String>(streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());
+				Tuple2<String, String> pair;
+				if (streamingEntity.isSource()) {
+					pair = new Tuple2<String, String>("S" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"S" to source entities
+				} else {
+					pair = new Tuple2<String, String>("T" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"T" to source entities
+				}
+				
 				output.add(pair);
 			}
 			
@@ -237,17 +251,20 @@ public class PRIMEBruteForceKafka {
 				List<String> ent1 = listOfEntitiesToCompare.get(i);
 				for (int j = i+1; j < listOfEntitiesToCompare.size(); j++) {
 					List<String> ent2 = listOfEntitiesToCompare.get(j);
-					if (ent1.size() >= 2 && ent2.size() >= 2) {
-						String idEnt1 = ent1.get(0);
-						String idEnt2 = ent2.get(0);
-						double similarity = calculateSimilarity(ent1, ent2);
-						numberOfComparisons.add(1);
+					if (ent1.get(0).charAt(0) != ent2.get(0).charAt(0)) {//compare only entities of different datasources
 						
-						
-						Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
-						Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
-						output.add(pair1);
-						output.add(pair2);
+						if (ent1.size() >= 2 && ent2.size() >= 2) {
+							String idEnt1 = ent1.get(0);
+							String idEnt2 = ent2.get(0);
+							double similarity = calculateSimilarity(ent1, ent2);
+							numberOfComparisons.add(1);
+							
+							
+							Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
+							Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
+							output.add(pair1);
+							output.add(pair2);
+						}
 					}
 					
 				}
@@ -314,18 +331,50 @@ public class PRIMEBruteForceKafka {
 	});
     
     JavaPairDStream<String, Iterable<String>> groupedPruned = prunedOutput.groupByKey();
+    
+    groupedPruned.flatMap(new FlatMapFunction<Tuple2<String,Iterable<String>>, String>() {
+
+		@Override
+		public Iterator<String> call(Tuple2<String, Iterable<String>> t) throws Exception {
+			String out = "";
+			List<String> listout = new ArrayList<String>();
+			out += t._1();
+			for (String string : t._2()) {
+				out += string;
+			}
+			listout.add(out);
+			return listout.iterator();
+		}
+	}).foreachRDD(rdd ->{
+    	System.out.println("Batch size: " + rdd.count());
+	      if(!rdd.isEmpty()){
+//	    	 List<Tuple2<String, Iterable<String>>> x = rdd.collect();
+	         rdd.saveAsTextFile("outputs/teste1/");
+	      }
+	});
+    
+    
+//    groupedPruned.dstream().saveAsTextFiles("outputs/myoutput","txt");
+
     		
-    groupedPruned.foreachRDD(rdd -> {
-    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
-        System.out.println("Batch size: " + rdd.count());
-//        rdd.foreach(e -> System.out.println(e));
-      });
+//    groupedPruned.foreachRDD(rdd -> {
+//    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+//        System.out.println("Batch size: " + rdd.count());
+////        rdd.foreach(e -> System.out.println(e));
+//    });
+    
+//    groupedPruned.foreachRDD(rdd ->{
+//        if(!rdd.isEmpty()){
+//           rdd.saveAsTextFile("outputs/teste1/");
+//        }
+//    });
     
     
     // start streaming
     System.out.println("*** about to start streaming");
     ssc.start();
     ssc.awaitTermination();
+    sc.stop();
     System.out.println("*** Streaming terminated");
   }
 
