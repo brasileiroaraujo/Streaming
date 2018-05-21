@@ -37,8 +37,12 @@ import scala.Tuple2;
 
 //Parallel-based Metablockig for Streaming Data
 public class PRIMEBruteForceKafka {
-  public static void main(String[] args) throws InterruptedException {
-	  System.setProperty("hadoop.home.dir", "K:\\winutils");
+
+public static void main(String[] args) throws InterruptedException {
+//	  System.setProperty("hadoop.home.dir", "K:\\winutils");
+	String OUTPUT_PATH = "outputs/teste7/";
+	  
+	  
     //
     // The "modern" way to initialize Spark is to create a SparkSession
     // although they really come from the world of Spark SQL, and Dataset
@@ -47,7 +51,7 @@ public class PRIMEBruteForceKafka {
     SparkSession spark = SparkSession
         .builder()
         .appName("streaming-Filtering")
-        .master("local[2]")
+        .master("local[1]")
         .getOrCreate();
     
 
@@ -115,12 +119,12 @@ public class PRIMEBruteForceKafka {
 			Set<Tuple2<String, String>> output = new HashSet<Tuple2<String, String>>();
 			
 			for (EntityProfile streamingEntity : input._2()) {
-				String[] urlSplit = streamingEntity.getEntityUrl().split("/");
+//				String[] urlSplit = streamingEntity.getEntityUrl().split("/");
 				Tuple2<String, String> pair;
 				if (streamingEntity.isSource()) {
-					pair = new Tuple2<String, String>("S" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"S" to source entities
+					pair = new Tuple2<String, String>("S" + streamingEntity.getKey(), input._1());/*streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());*///"S" to source entities
 				} else {
-					pair = new Tuple2<String, String>("T" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"T" to source entities
+					pair = new Tuple2<String, String>("T" + streamingEntity.getKey(), input._1());/*streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());*///"T" to source entities
 				}
 				
 				output.add(pair);
@@ -321,9 +325,11 @@ public class PRIMEBruteForceKafka {
 			double pruningWeight = totalWeight/size;
 			
 			for (String value : tuple._2()) {
-				double weight = Double.parseDouble(value.split("\\=")[1]);
+				String[] entityValue = value.split("\\=");
+				String idEntity = entityValue[0];
+				double weight = Double.parseDouble(entityValue[1]);
 				if (weight >= pruningWeight) {
-					output.add(new Tuple2<String, String>(tuple._1(), value));
+					output.add(new Tuple2<String, String>(tuple._1(), idEntity));
 				}
 			}
 			
@@ -334,6 +340,32 @@ public class PRIMEBruteForceKafka {
     
     JavaPairDStream<String, Iterable<String>> groupedPruned = prunedOutput.groupByKey();
     
+    //save all results (including all pre calculated)
+    Function2<List<Iterable<String>>, Optional<List<String>>, Optional<List<String>>> updateOutputFunction =
+            new Function2<List<Iterable<String>>, Optional<List<String>>, Optional<List<String>>>() {
+				@Override
+				public Optional<List<String>> call(List<Iterable<String>> values,
+						Optional<List<String>> state) throws Exception {
+					List<String> count = state.or(new ArrayList<String>());
+					for (Iterable<String> listBlocks : values) {
+						List<String> listOfBlocks = StreamSupport.stream(listBlocks.spliterator(), false).collect(Collectors.toList());
+				    	count.addAll(listOfBlocks);
+					}
+			    	
+					return Optional.of(count);
+				}
+    };
+    
+    //save the output in state
+    JavaPairDStream<String, List<String>> PRIMEoutput =  groupedPruned.updateStateByKey(updateOutputFunction);
+    
+    PRIMEoutput.foreachRDD(rdd ->{
+    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+    	System.out.println("Batch size: " + rdd.count());
+        if(!rdd.isEmpty()){
+           rdd.saveAsTextFile(OUTPUT_PATH);
+        }
+    });
     
 //    groupedPruned.flatMap(new FlatMapFunction<Tuple2<String,Iterable<String>>, String>() {
 //
@@ -362,15 +394,17 @@ public class PRIMEBruteForceKafka {
 //    groupedPruned.dstream().saveAsTextFiles("outputs/myoutput","txt");
 
     		
-    groupedPruned.foreachRDD(rdd -> {
-    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
-        System.out.println("Batch size: " + rdd.count());
-//        rdd.foreach(e -> System.out.println(e));
-    });
+//    groupedPruned.foreachRDD(rdd -> {
+//    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+//        System.out.println("Batch size: " + rdd.count());
+////        rdd.foreach(e -> System.out.println(e));
+//    });
     
 //    groupedPruned.foreachRDD(rdd ->{
+//    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+//    	System.out.println("Batch size: " + rdd.count());
 //        if(!rdd.isEmpty()){
-//           rdd.saveAsTextFile("outputs/teste1/");
+//           rdd.saveAsTextFile(OUTPUT_PATH);
 //        }
 //    });
     

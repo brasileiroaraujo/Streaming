@@ -21,6 +21,7 @@ import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.api.java.function.PairFunction;
@@ -54,6 +55,8 @@ import streaming.util.JavaWordBlacklist;
 //Parallel-based Metablockig for Streaming Data
 public class PRIMEUpdateBasedKafka {
   public static void main(String[] args) throws InterruptedException {
+	  String OUTPUT_PATH = "outputs/teste5/";
+	  
     //
     // The "modern" way to initialize Spark is to create a SparkSession
     // although they really come from the world of Spark SQL, and Dataset
@@ -62,7 +65,7 @@ public class PRIMEUpdateBasedKafka {
     SparkSession spark = SparkSession
         .builder()
         .appName("streaming-Filtering")
-        .master("local[4]")
+        .master("local[1]")
         .getOrCreate();
     
     //
@@ -78,7 +81,7 @@ public class PRIMEUpdateBasedKafka {
     
     //We have configured the period to 2 seconds (2000 ms). 
     //Notice that Spark Streaming is not designed for periods shorter than about half a second. If you need a shorter delay in your processing, try Flink or Storm instead.
-    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(2000));
+    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(8000));
     //checkpointing is necessary since states are used
     ssc.checkpoint("checkpoints/");
     
@@ -132,9 +135,9 @@ public class PRIMEUpdateBasedKafka {
 				String[] urlSplit = streamingEntity.getEntityUrl().split("/");
 				Tuple2<String, String> pair;
 				if (streamingEntity.isSource()) {
-					pair = new Tuple2<String, String>("S" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"S" to source entities
+					pair = new Tuple2<String, String>("S" + streamingEntity.getKey(), input._1());/*streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());*///"S" to source entities
 				} else {
-					pair = new Tuple2<String, String>("T" + streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());//"T" to source entities
+					pair = new Tuple2<String, String>("T" + streamingEntity.getKey(), input._1());/*streamingEntity.hashCode() + "/" + urlSplit[urlSplit.length-1], input._1());*///"T" to source entities
 				}
 				output.add(pair);
 			}
@@ -329,12 +332,11 @@ public class PRIMEUpdateBasedKafka {
 			double pruningWeight = totalWeight/size;
 			
 			for (String value : tuple._2()) {
-				double weight = Double.parseDouble(value.split("\\=")[1]);
+				String[] entityValue = value.split("\\=");
+				String idEntity = entityValue[0];
+				double weight = Double.parseDouble(entityValue[1]);
 				if (weight >= pruningWeight) {
-//					if (weight == 0) {
-//						System.out.println();
-//					}
-					output.add(new Tuple2<String, String>(tuple._1(), value));
+					output.add(new Tuple2<String, String>(tuple._1(), idEntity));
 				}
 			}
 			
@@ -343,14 +345,39 @@ public class PRIMEUpdateBasedKafka {
 	});
     
     JavaPairDStream<String, Iterable<String>> groupedPruned = prunedOutput.groupByKey();
+    
+    //save all results (including all pre calculated)
+    Function2<List<Iterable<String>>, Optional<List<String>>, Optional<List<String>>> updateOutputFunction =
+            new Function2<List<Iterable<String>>, Optional<List<String>>, Optional<List<String>>>() {
+				@Override
+				public Optional<List<String>> call(List<Iterable<String>> values,
+						Optional<List<String>> state) throws Exception {
+					List<String> count = state.or(new ArrayList<String>());
+					for (Iterable<String> listBlocks : values) {
+						List<String> listOfBlocks = StreamSupport.stream(listBlocks.spliterator(), false).collect(Collectors.toList());
+				    	count.addAll(listOfBlocks);
+					}
+			    	
+					return Optional.of(count);
+				}
+    };
+    
+    //save the output in state
+    JavaPairDStream<String, List<String>> PRIMEoutput =  groupedPruned.updateStateByKey(updateOutputFunction);
     		
-    groupedPruned.foreachRDD(rdd -> {
+//    groupedPruned.foreachRDD(rdd -> {
+//    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+//        System.out.println("Batch size: " + rdd.count());
+////        rdd.foreach(e -> System.out.println(e));
+//      });
+    
+    PRIMEoutput.foreachRDD(rdd ->{
     	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
-        System.out.println("Batch size: " + rdd.count());
-//        rdd.foreach(e -> System.out.println(e));
-      });
-    
-    
+    	System.out.println("Batch size: " + rdd.count());
+        if(!rdd.isEmpty()){
+           rdd.saveAsTextFile(OUTPUT_PATH);
+        }
+    });    
     
     // start streaming
     System.out.println("*** about to start streaming");

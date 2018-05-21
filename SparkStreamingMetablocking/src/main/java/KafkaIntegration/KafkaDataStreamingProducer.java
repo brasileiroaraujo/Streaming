@@ -29,6 +29,9 @@ public class KafkaDataStreamingProducer {
         //CHOOSE THE INPUT PATHS
         String INPUT_PATH1 = "inputs/dataset1_abt";
         String INPUT_PATH2 = "inputs/dataset2_buy";
+        
+//        String INPUT_PATH1 = "inputs/dataset1_amazon";
+//        String INPUT_PATH2 = "inputs/dataset2_g";
 
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         ArrayList<EntityProfile> EntityListSource = null;
@@ -49,10 +52,12 @@ public class KafkaDataStreamingProducer {
 			e.printStackTrace();
 		}
 		
+		int uniqueId = 0;
 		for (int i = 0; i < Math.max(EntityListSource.size(), EntityListTarget.size()); i++) {
 			if (i < EntityListSource.size()) {
 				EntityProfile entitySource = EntityListSource.get(i);
 				entitySource.setSource(true);
+				entitySource.setKey(uniqueId);
 				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat());
 	            producer.send(record);
 			}
@@ -60,13 +65,16 @@ public class KafkaDataStreamingProducer {
 			if (i < EntityListTarget.size()) {
 				EntityProfile entityTarget = EntityListTarget.get(i);
 				entityTarget.setSource(false);
+				entityTarget.setKey(uniqueId);
 				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat());
 	            producer.send(record2);
 			}
 			
+			uniqueId++;
+			
             Thread.sleep(timers[random.nextInt(timers.length)]);
 		}
-
+		
         producer.close();
         System.out.println("----------------------------END------------------------------");
     }

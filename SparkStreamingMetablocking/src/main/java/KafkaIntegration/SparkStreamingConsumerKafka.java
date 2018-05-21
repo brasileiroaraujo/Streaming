@@ -18,7 +18,7 @@ import kafka.serializer.StringDecoder;
 public class SparkStreamingConsumerKafka {
 
     public static void main(String[] args) throws InterruptedException {
-    	System.setProperty("hadoop.home.dir", "K:\\winutils");
+//    	System.setProperty("hadoop.home.dir", "K:\\winutils");
     	
         SparkConf conf = new SparkConf()
                 .setAppName("kafka-sandbox")
