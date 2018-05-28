@@ -27,5 +27,7 @@
 			<attribute name="maven.pomderived" value="true"/>
 		</attributes>
 	</classpathentry>
+	<classpathentry kind="lib" path="libs/JInsect.jar"/>
+	<classpathentry kind="lib" path="libs/OpenJGraph.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>

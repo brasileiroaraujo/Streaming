@@ -38,7 +38,7 @@ public class SparkStreamingConsumerKafka {
         directKafkaStream.foreachRDD(rdd -> {
             System.out.println("--- New RDD with " + rdd.partitions().size()
                     + " partitions and " + rdd.count() + " records");
-//            rdd.foreach(record -> System.out.println(new EntityProfile(record._2()).isSource()));
+            rdd.foreach(record -> System.out.println(new EntityProfile(record._2()).isSource()));
             rdd.saveAsTextFile("outputs/teste1/");
         });
         

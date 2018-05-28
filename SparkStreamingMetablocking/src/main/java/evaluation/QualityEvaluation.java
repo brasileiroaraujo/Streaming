@@ -19,8 +19,8 @@ public class QualityEvaluation {
 	
 	public static void main(String[] args) {
 		//CHOOSE THE INPUT PATHS
-        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_abtbuy";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
-        String INPUT_PATH_BLOCKS = "outputs/teste7/part-00000";
+        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_amazongp";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
+        String INPUT_PATH_BLOCKS = "outputs/gp-amazonUP/part-00000";
         
         HashSet<IdDuplicates> groundtruth = null;
         Map<Integer, List<Integer>> blocks = new HashMap<Integer, List<Integer>>();
@@ -83,6 +83,7 @@ public class QualityEvaluation {
 			if (listOfEntitiesIntoBlock != null && listOfEntitiesIntoBlock.contains(idDuplicates.getEntityId2())) {
 				duplicadasIdentificadas++;
 			}
+			blocks.remove(idDuplicates.getEntityId1());//avoid compute more than one time
 		}
 		System.out.println("Foram identificadas: " + duplicadasIdentificadas + " duplicatas de " + groundtruth.size());
 		

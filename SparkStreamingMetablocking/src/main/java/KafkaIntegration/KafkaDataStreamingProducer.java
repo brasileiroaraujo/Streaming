@@ -19,7 +19,7 @@ public class KafkaDataStreamingProducer {
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         
-//        int[] timers = {10, 25, 50, 100, 250, 500};
+//        int[] timers = {10, 25, 50, 100, 250};
         int[] timers = {100};
         Random random = new Random();
         
@@ -27,11 +27,11 @@ public class KafkaDataStreamingProducer {
         final String topicName = "mytopic";
         
         //CHOOSE THE INPUT PATHS
-        String INPUT_PATH1 = "inputs/dataset1_abt";
-        String INPUT_PATH2 = "inputs/dataset2_buy";
+        String INPUT_PATH1 = "inputs/dataset1_amazon";
+        String INPUT_PATH2 = "inputs/dataset2_gp";
         
-//        String INPUT_PATH1 = "inputs/dataset1_amazon";
-//        String INPUT_PATH2 = "inputs/dataset2_g";
+//        String INPUT_PATH1 = "inputs/dataset1_abt";
+//        String INPUT_PATH2 = "inputs/dataset2_buy";
 
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         ArrayList<EntityProfile> EntityListSource = null;

@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.spark.Accumulator;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -21,9 +22,11 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.api.java.JavaDStream;
+import org.apache.spark.streaming.api.java.JavaInputDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaPairInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
@@ -32,6 +35,7 @@ import org.apache.spark.streaming.kafka.KafkaUtils;
 import DataStructures.Attribute;
 import DataStructures.EntityProfile;
 import kafka.serializer.StringDecoder;
+import scala.Some;
 import scala.Tuple2;
 
 
@@ -40,7 +44,8 @@ public class PRIMEBruteForceKafka {
 
 public static void main(String[] args) throws InterruptedException {
 //	  System.setProperty("hadoop.home.dir", "K:\\winutils");
-	String OUTPUT_PATH = "outputs/teste7/";
+	String OUTPUT_PATH = "outputs/gp-amazonBF/";
+	int timeWindow = 12000; //We have configured the period to x seconds (x * 1000 ms).
 	  
 	  
     //
@@ -65,22 +70,39 @@ public static void main(String[] args) throws InterruptedException {
     // streams will produce data every second (note: it would be nice if this was Java 8's Duration class,
     // but it isn't -- it comes from org.apache.spark.streaming)
     
-    //We have configured the period to 8 seconds (8000 ms). 
     //Notice that Spark Streaming is not designed for periods shorter than about half a second. If you need a shorter delay in your processing, try Flink or Storm instead.
-    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(8000));
+    JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(timeWindow));
     
     //checkpointing is necessary since states are used
     ssc.checkpoint("checkpoints/");
     
 
-    //kafka pool to receive streaming data 
+    //kafka pool to receive streaming data
     Map<String, String> kafkaParams = new HashMap<>();
     kafkaParams.put("metadata.broker.list", "localhost:9092");
     Set<String> topics = Collections.singleton("mytopic");
 
     JavaPairInputDStream<String, String> streamOfRecords = KafkaUtils.createDirectStream(ssc,
             String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topics);
-
+//    Map<String, Object> kafkaParams = new HashMap<>();
+//    kafkaParams.put("metadata.broker.list", "localhost:9092");
+//    Set<String> topics = Collections.singleton("mytopic");
+//
+//    JavaInputDStream<ConsumerRecord<String, String>> streamOfRecords = KafkaUtils.createDirectStream(
+//            ssc,
+//            LocationStrategies.PreferConsistent(),
+//            ConsumerStrategies.Subscribe(topics, kafkaParams));
+//    		createDirectStream(ssc,
+//            String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topics);
+    
+    
+    //INIT TIME
+    long initTime = System.currentTimeMillis();
+    Accumulator<Double> timeForEachInteration = sc.accumulator(initTime);
+    Accumulator<Double> sumTimePerInterations = sc.accumulator(0.0);
+    Accumulator<Integer> numberInterations = sc.accumulator(0);
+    
+    
     // use a simple transformation to create a derived stream -- the original stream of Records is parsed
     // to produce a stream of KeyAndValue objects
     JavaDStream<EntityProfile> streamOfItems = streamOfRecords.map(s -> new EntityProfile(s._2()));
@@ -95,7 +117,7 @@ public static void main(String[] args) throws InterruptedException {
 				Set<String> cleanTokens = new HashSet<String>();
 				
 				for (Attribute att : se.getAttributes()) {
-					String[] tokens = att.getValue().split(" ");
+					String[] tokens = gr.demokritos.iit.jinsect.utils.splitToWords(att.getValue());
 					Collections.addAll(cleanTokens, tokens);
 				}
 				
@@ -181,7 +203,7 @@ public static void main(String[] args) throws InterruptedException {
     
     
     
- 
+    Broadcast<Integer> iterationCount = sc.broadcast(numberInterations.value());
     Function2<List<Iterable<List<String>>>, Optional<List<List<String>>>, Optional<List<List<String>>>> updateFunction =
             new Function2<List<Iterable<List<String>>>, Optional<List<List<String>>>, Optional<List<List<String>>>>() {
 				@Override
@@ -192,6 +214,12 @@ public static void main(String[] args) throws InterruptedException {
 						List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.spliterator(), false).collect(Collectors.toList());
 				    	count.addAll(listOfBlocks);
 					}
+					
+//					if (count.size() > 200) {
+//			    		return Optional.empty();
+//					} else {
+//				        return Optional.of(count);
+//					}
 			    	
 					return Optional.of(count);
 				}
@@ -199,6 +227,9 @@ public static void main(String[] args) throws InterruptedException {
     
     //save in state
     JavaPairDStream<String, List<List<String>>> finalOutputProcessed =  blockPreprocessed.updateStateByKey(updateFunction);
+    
+    //Avoid the increasing of data in memory
+    finalOutputProcessed.checkpoint(new Duration(timeWindow));
     
 
     
@@ -256,7 +287,7 @@ public static void main(String[] args) throws InterruptedException {
 				List<String> ent1 = listOfEntitiesToCompare.get(i);
 				for (int j = i+1; j < listOfEntitiesToCompare.size(); j++) {
 					List<String> ent2 = listOfEntitiesToCompare.get(j);
-					if (ent1.get(0).charAt(0) != ent2.get(0).charAt(0)) {//compare only entities of different datasources
+					if (ent1.get(0).charAt(0) != ent2.get(0).charAt(0) /*&& ent1.get(0).charAt(0) == 'S'*/) {//compare only entities of different datasources
 						
 						if (ent1.size() >= 2 && ent2.size() >= 2) {
 							String idEnt1 = ent1.get(0);
@@ -265,10 +296,13 @@ public static void main(String[] args) throws InterruptedException {
 							numberOfComparisons.add(1);
 							
 							
-							Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
-							Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
-							output.add(pair1);
-							output.add(pair2);
+							if (ent1.get(0).charAt(0) == 'S') {
+								Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
+								output.add(pair1);
+							} else {
+								Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
+								output.add(pair2);
+							}
 						}
 					}
 					
@@ -359,9 +393,27 @@ public static void main(String[] args) throws InterruptedException {
     //save the output in state
     JavaPairDStream<String, List<String>> PRIMEoutput =  groupedPruned.updateStateByKey(updateOutputFunction);
     
+    //Avoid the increasing of data in memory
+    PRIMEoutput.checkpoint(new Duration(timeWindow));
+    
     PRIMEoutput.foreachRDD(rdd ->{
-    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
     	System.out.println("Batch size: " + rdd.count());
+    	
+    	//Total TIME
+    	long endTime = System.currentTimeMillis();
+    	System.out.println("Total time: " + ((double)endTime-initTime)/1000 + " seconds.");
+    	
+    	//Current Iteration TIME
+    	System.out.println("Iteration time: : " + ((double)endTime-timeForEachInteration.value())/1000 + " seconds.");
+    	
+    	sumTimePerInterations.add(((double)endTime-timeForEachInteration.value())/1000);
+    	numberInterations.add(1);
+    	System.out.println("Mean iteration time: " + (sumTimePerInterations.value()/numberInterations.value() + " seconds."));
+    	
+    	timeForEachInteration.setValue((double) endTime);
+    	
+    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+    	
         if(!rdd.isEmpty()){
            rdd.saveAsTextFile(OUTPUT_PATH);
         }
