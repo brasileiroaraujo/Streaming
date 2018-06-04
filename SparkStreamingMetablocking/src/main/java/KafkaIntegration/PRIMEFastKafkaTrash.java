@@ -45,6 +45,7 @@ import org.apache.spark.streaming.dstream.DStream;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 
 import DataStructures.Attribute;
+import DataStructures.BlocksAndSimilarities;
 import DataStructures.EntityProfile;
 import kafka.serializer.StringDecoder;
 import scala.Tuple2;
@@ -55,9 +56,9 @@ import streaming.util.JavaWordBlacklist;
 
 
 //Parallel-based Metablockig for Streaming Data
-public class PRIMEUpdateBasedKafka {
+public class PRIMEFastKafkaTrash {
   public static void main(String[] args) throws InterruptedException {
-	  String OUTPUT_PATH = "outputs/gp-amazonUP2/";
+	  String OUTPUT_PATH = "outputs/gp-amazonFast2/";
 	  int timeWindow = 12000; //We have configured the period to x seconds (x * 1000 ms).
 	  
     //
@@ -135,7 +136,7 @@ public class PRIMEUpdateBasedKafka {
 				}
 				
 				for (String tk : cleanTokens) {
-					output.add(new Tuple2<>(tk, se));
+					output.add(new Tuple2<>(tk.hashCode()+"", se));
 				}
 				
 				return output.iterator();
@@ -216,14 +217,19 @@ public class PRIMEUpdateBasedKafka {
     
     
     Broadcast<Integer> iterationCount = sc.broadcast(numberInterations.value());
-    Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
+    Function3<String, Optional<Iterable<List<String>>>, State<List<String>>, Tuple2<String, List<String>>> 
     			mappingFunctionBlockPreprocessed = (key, listBlocks, state) -> {
 //    	System.err.println("Chegou no State: " + ((System.currentTimeMillis() - initTime)/1000));
-    	List<List<String>> count = (state.exists() ? state.get() : new ArrayList<List<String>>());
+    	List<String> count = (state.exists() ? state.get() : new ArrayList<String>());
     	List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.get().spliterator(), false).collect(Collectors.toList());
-    	count.addAll(listOfBlocks);
+    	for (List<String> entBlocks : listOfBlocks) {
+    		String entity = entBlocks.get(0);
+    		if (entity.contains("T")) {
+    			count.add(entity);
+			}
+		}
     	
-    	Tuple2<String, List<List<String>>> thisOne = new Tuple2<>(key, count);
+    	Tuple2<String, List<String>> thisOne = new Tuple2<>(key, count);
     	
 //    	if (count.size() > 200 /*|| (count.size() == 1 && iterationCount.getValue()%5==0)*/) {
 //    		state.remove();
@@ -237,7 +243,7 @@ public class PRIMEUpdateBasedKafka {
     
     //save in state.
     //Using mapWithState, we just manipulate the update entities/blocks. It's a property provided by mapWithState. UpdateState manipulates with all data (force brute).
-    JavaMapWithStateDStream<String, Iterable<List<String>>, List<List<String>>, Tuple2<String, List<List<String>>>> finalOutputProcessed =
+    JavaMapWithStateDStream<String, Iterable<List<String>>, List<String>, Tuple2<String, List<String>>> finalOutputProcessed =
     		blockPreprocessed.mapWithState(StateSpec.function(mappingFunctionBlockPreprocessed));
     
     //Avoid the increasing of data in memory
@@ -273,9 +279,9 @@ public class PRIMEUpdateBasedKafka {
     
     
     //convert to JavaPairDStream
-    JavaDStream<Tuple2<String, List<List<String>>>> onlyUpdatedEntityBlocksToCompare = finalOutputProcessed.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
+    JavaDStream<Tuple2<String, List<String>>> onlyUpdatedEntityBlocksToCompare = finalOutputProcessed.filter(new Function<Tuple2<String,List<String>>, Boolean>() {
 		@Override
-		public Boolean call(Tuple2<String, List<List<String>>> v1) throws Exception {
+		public Boolean call(Tuple2<String, List<String>> v1) throws Exception {
 			return true;
 		}
 	});
@@ -283,12 +289,12 @@ public class PRIMEUpdateBasedKafka {
     Accumulator<Integer> numberOfComparisons = sc.accumulator(0);
     
 	//coloca as tuplas no formato <e1, e2 = 0.65> (calcula similaridade)
-    JavaPairDStream<String, String> similarities = onlyUpdatedEntityBlocksToCompare.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
+    JavaPairDStream<String, BlocksAndSimilarities> similarities = blockPreprocessed.flatMapToPair(new PairFlatMapFunction<Tuple2<String,Iterable<List<String>>>, String, BlocksAndSimilarities>() {
     	
 		@Override
-		public Iterator<Tuple2<String, String>> call(Tuple2<String, List<List<String>>> input) throws Exception {
+		public Iterator<Tuple2<String, BlocksAndSimilarities>> call(Tuple2<String, Iterable<List<String>>> input) throws Exception {
 //			System.err.println("Calculando similaridade: " + ((System.currentTimeMillis() - initTime)/1000));
-			List<Tuple2<String, String>> output = new ArrayList<Tuple2<String, String>>();
+			List<Tuple2<String, BlocksAndSimilarities>> output = new ArrayList<Tuple2<String, BlocksAndSimilarities>>();
 			
 			List<List<String>> listOfEntitiesToCompare = StreamSupport.stream(input._2().spliterator(), false).collect(Collectors.toList());
 			
@@ -301,17 +307,19 @@ public class PRIMEUpdateBasedKafka {
 						if (ent1.size() >= 2 && ent2.size() >= 2) {
 							String idEnt1 = ent1.get(0);
 							String idEnt2 = ent2.get(0);
-							double similarity = calculateSimilarity(ent1, ent2);
-							numberOfComparisons.add(1);
-							
-							if (ent1.get(0).charAt(0) == 'S') {
-								Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
-								output.add(pair1);
-							} else {
-								Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
-								output.add(pair2);
+							double similarity = calculateSimilarity(input._1(), ent1, ent2);
+							if (similarity >= 0) {
+								numberOfComparisons.add(1);
+								
+								if (ent1.get(0).charAt(0) == 'S') {
+									Tuple2<String, BlocksAndSimilarities> pair1 = new Tuple2<String, BlocksAndSimilarities>(idEnt1, new BlocksAndSimilarities(new Tuple2<String, Double>(idEnt2, similarity), ent1));
+									output.add(pair1);
+								} else {
+									Tuple2<String, BlocksAndSimilarities> pair2 = new Tuple2<String, BlocksAndSimilarities>(idEnt2, new BlocksAndSimilarities(new Tuple2<String, Double>(idEnt1, similarity), ent2));
+//									Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
+									output.add(pair2);
+								}
 							}
-							
 						}
 					}
 					
@@ -321,13 +329,18 @@ public class PRIMEUpdateBasedKafka {
 			return output.iterator();
 		}
 
-		private double calculateSimilarity(List<String> ent1, List<String> ent2) {
+		private double calculateSimilarity(String blockKey, List<String> ent1, List<String> ent2) {
 //    			ent1.remove(0);
 //    			ent2.remove(0);
 			
 			int maxSize = Math.max(ent1.size()-1, ent2.size()-1);
 			List<String> intersect = new ArrayList<String>(ent1);
 			intersect.retainAll(ent2);
+			
+			//MACOBI strategy
+			if (!Collections.min(intersect).equals(blockKey)) {
+				return -1;
+			}
 			
 			
 			if (maxSize > 0) {
@@ -344,33 +357,68 @@ public class PRIMEUpdateBasedKafka {
 	});
     
     //coloca as tuplas no formato <e1, [(e2 = 0.65), (e3 = 0.8)]>
-    JavaPairDStream<String, Iterable<String>> similaritiesGrouped = similarities.groupByKey();
+    JavaPairDStream<String, Iterable<BlocksAndSimilarities>> similaritiesGrouped = similarities.groupByKey();
     
     
+	Function3<String, Optional<Iterable<BlocksAndSimilarities>>, State<List<BlocksAndSimilarities>>, Tuple2<String, List<BlocksAndSimilarities>>> mappingFunctionSimilarities = (
+			key, listBlocks, state) -> {
+		// System.err.println("Chegou no State: " + ((System.currentTimeMillis() -
+		// initTime)/1000));
+		List<BlocksAndSimilarities> count = (state.exists() ? state.get() : new ArrayList<BlocksAndSimilarities>());
+		List<BlocksAndSimilarities> listOfBlocks = StreamSupport.stream(listBlocks.get().spliterator(), false)
+				.collect(Collectors.toList());
+		count.addAll(listOfBlocks);
+			
+
+		Tuple2<String, List<BlocksAndSimilarities>> thisOne = new Tuple2<>(key, count);
+		state.update(count);
+
+		return thisOne;
+	};
+
+	// save in state.
+	// Using mapWithState, we just manipulate the update entities/blocks. It's a
+	// property provided by mapWithState. UpdateState manipulates with all data
+	// (force brute).
+	JavaMapWithStateDStream<String, Iterable<BlocksAndSimilarities>, List<BlocksAndSimilarities>, Tuple2<String, List<BlocksAndSimilarities>>> stateSimilarities = similaritiesGrouped
+			.mapWithState(StateSpec.function(mappingFunctionSimilarities));
+
+	// Avoid the increasing of data in memory
+	stateSimilarities.checkpoint(new Duration(timeWindow * 3));
+    
+    
+	
+	//convert to JavaPairDStream
+	JavaDStream<Tuple2<String, List<BlocksAndSimilarities>>> similaritiesToPrune = stateSimilarities.filter(new Function<Tuple2<String,List<BlocksAndSimilarities>>, Boolean>() {
+	
+		@Override
+		public Boolean call(Tuple2<String, List<BlocksAndSimilarities>> v1) throws Exception {
+			return true;
+		}
+	});
     
     
     //pruning phase
-    JavaPairDStream<String, String> prunedOutput = similaritiesGrouped.flatMapToPair(new PairFlatMapFunction<Tuple2<String,Iterable<String>>, String, String>() {
+    JavaPairDStream<String, String> prunedOutput = similaritiesToPrune.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<BlocksAndSimilarities>>, String, String>() {
 
 		@Override
-		public Iterator<Tuple2<String, String>> call(Tuple2<String, Iterable<String>> tuple) throws Exception {
+		public Iterator<Tuple2<String, String>> call(Tuple2<String, List<BlocksAndSimilarities>> tuple) throws Exception {
 			Set<Tuple2<String, String>> output = new HashSet<Tuple2<String, String>>();
 //			System.err.println("Pruning: " + ((System.currentTimeMillis() - initTime)/1000));
 			double totalWeight = 0;
 			double size = 0;
 			
-			for (String value : tuple._2()) {
-				String[] entityWeight = value.split("\\=");
-				totalWeight += Double.parseDouble(entityWeight[1]);
+			for (BlocksAndSimilarities value : tuple._2()) {
+				Double entityWeight = value.getSimilarity()._2();
+				totalWeight += entityWeight;
 				size++;
 			}
 			
 			double pruningWeight = totalWeight/size;
 			
-			for (String value : tuple._2()) {
-				String[] entityValue = value.split("\\=");
-				String idEntity = entityValue[0];
-				double weight = Double.parseDouble(entityValue[1]);
+			for (BlocksAndSimilarities value : tuple._2()) {
+				String idEntity = value.getSimilarity()._1();
+				double weight = value.getSimilarity()._2();
 				if (weight >= pruningWeight) {
 					output.add(new Tuple2<String, String>(tuple._1(), idEntity));
 				}

@@ -20,7 +20,7 @@ public class QualityEvaluation {
 	public static void main(String[] args) {
 		//CHOOSE THE INPUT PATHS
         String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_amazongp";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
-        String INPUT_PATH_BLOCKS = "outputs/gp-amazonUP/part-00000";
+        String INPUT_PATH_BLOCKS = "outputs/amazon-gpNew/part-00000";
         
         HashSet<IdDuplicates> groundtruth = null;
         Map<Integer, List<Integer>> blocks = new HashMap<Integer, List<Integer>>();
@@ -39,6 +39,7 @@ public class QualityEvaluation {
 
 		BufferedReader br = null;
 		FileReader fr = null;
+		int totalComparisons = 0;
 		try {
 			//br = new BufferedReader(new FileReader(FILENAME));
 			fr = new FileReader(INPUT_PATH_BLOCKS);
@@ -52,15 +53,30 @@ public class QualityEvaluation {
 				sCurrentLine = sCurrentLine.replace(" ", "");
 				String[] entities = sCurrentLine.split(",");
 				
-				if (entities[0].contains("S")) {
-					int key = Integer.parseInt(entities[0].replace("S", ""));
-					List<Integer> entitiesToCompare = new ArrayList<Integer>();
-					for (int i = 1; i < entities.length; i++) {
-						entitiesToCompare.add(Integer.parseInt(entities[i].replace("T", "")));
-					}
-					
-					blocks.put(key, entitiesToCompare);
+				//old version of prime
+//				if (entities[0].contains("S")) {
+//					int key = Integer.parseInt(entities[0].replace("S", ""));
+//					List<Integer> entitiesToCompare = new ArrayList<Integer>();
+//					for (int i = 1; i < entities.length; i++) {
+//						entitiesToCompare.add(Integer.parseInt(entities[i].replace("T", "")));
+//					}
+//					
+//					totalComparisons += entitiesToCompare.size();
+//					
+//					blocks.put(key, entitiesToCompare);
+//				}
+				
+				//new version
+				int key = Integer.parseInt(entities[0]);
+				List<Integer> entitiesToCompare = new ArrayList<Integer>();
+				for (int i = 1; i < entities.length; i++) {
+					entitiesToCompare.add(Integer.parseInt(entities[i]));
 				}
+				
+				totalComparisons += entitiesToCompare.size();
+				
+				blocks.put(key, entitiesToCompare);
+				
 				
 			}
 		} catch (IOException e) {
@@ -85,7 +101,12 @@ public class QualityEvaluation {
 			}
 			blocks.remove(idDuplicates.getEntityId1());//avoid compute more than one time
 		}
-		System.out.println("Foram identificadas: " + duplicadasIdentificadas + " duplicatas de " + groundtruth.size());
+		double pc = (((double)duplicadasIdentificadas)/groundtruth.size());
+		double pq = (((double)duplicadasIdentificadas)/totalComparisons);
+		System.out.println("PC= " + pc);
+		System.out.println("PQ= " + pq);
+		System.out.println("FM= " + (2*pc*pq)/(pc+pq));
+		
 		
 	}
 }

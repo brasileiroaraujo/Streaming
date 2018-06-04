@@ -55,9 +55,9 @@ import streaming.util.JavaWordBlacklist;
 
 
 //Parallel-based Metablockig for Streaming Data
-public class PRIMEUpdateBasedKafka {
+public class PRIMEFastKafka {
   public static void main(String[] args) throws InterruptedException {
-	  String OUTPUT_PATH = "outputs/gp-amazonUP2/";
+	  String OUTPUT_PATH = "outputs/gp-amazonFast2/";
 	  int timeWindow = 12000; //We have configured the period to x seconds (x * 1000 ms).
 	  
     //
@@ -135,7 +135,7 @@ public class PRIMEUpdateBasedKafka {
 				}
 				
 				for (String tk : cleanTokens) {
-					output.add(new Tuple2<>(tk, se));
+					output.add(new Tuple2<>(tk.hashCode()+"", se));
 				}
 				
 				return output.iterator();
@@ -301,17 +301,18 @@ public class PRIMEUpdateBasedKafka {
 						if (ent1.size() >= 2 && ent2.size() >= 2) {
 							String idEnt1 = ent1.get(0);
 							String idEnt2 = ent2.get(0);
-							double similarity = calculateSimilarity(ent1, ent2);
-							numberOfComparisons.add(1);
-							
-							if (ent1.get(0).charAt(0) == 'S') {
-								Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
-								output.add(pair1);
-							} else {
-								Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
-								output.add(pair2);
+							double similarity = calculateSimilarity(input._1(), ent1, ent2);
+							if (similarity >= 0) {
+								numberOfComparisons.add(1);
+								
+								if (ent1.get(0).charAt(0) == 'S') {
+									Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
+									output.add(pair1);
+								} else {
+									Tuple2<String, String> pair2 = new Tuple2<String, String>(idEnt2, idEnt1 + "=" + similarity);
+									output.add(pair2);
+								}
 							}
-							
 						}
 					}
 					
@@ -321,13 +322,18 @@ public class PRIMEUpdateBasedKafka {
 			return output.iterator();
 		}
 
-		private double calculateSimilarity(List<String> ent1, List<String> ent2) {
+		private double calculateSimilarity(String blockKey, List<String> ent1, List<String> ent2) {
 //    			ent1.remove(0);
 //    			ent2.remove(0);
 			
 			int maxSize = Math.max(ent1.size()-1, ent2.size()-1);
 			List<String> intersect = new ArrayList<String>(ent1);
 			intersect.retainAll(ent2);
+			
+			//MACOBI strategy
+			if (!Collections.min(intersect).equals(blockKey)) {
+				return -1;
+			}
 			
 			
 			if (maxSize > 0) {
