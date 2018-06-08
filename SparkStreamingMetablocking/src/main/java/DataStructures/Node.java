@@ -10,6 +10,7 @@ import scala.noinline;
 import scala.annotation.elidable;
 
 public class Node implements Serializable {
+	private static final long serialVersionUID = -6462453052244774523L;
 	private int id;
 	private Set<Integer> blocks;
 	private Set<Tuple2<Integer, Double>> neighbors;
@@ -17,6 +18,7 @@ public class Node implements Serializable {
 	private boolean marked;
 	private double sumWeight = 0.0;
 	private int numberOfNeighbors = 0;
+	private Integer tokenTemporary;
 	
 	
 	public Node(int id, Set<Integer> blocks, Set<Tuple2<Integer, Double>> neighbors, boolean isSource) {
@@ -26,11 +28,30 @@ public class Node implements Serializable {
 		this.neighbors = neighbors;
 		this.isSource = isSource;
 	}
+	
+//	public Node(int id, Set<Integer> blocks, Set<Tuple2<Integer, Double>> neighbors, boolean isSource, Integer tokenTemporary) {
+//		super();
+//		this.id = id;
+//		this.blocks = blocks;
+//		this.neighbors = neighbors;
+//		this.isSource = isSource;
+//		this.tokenTemporary = tokenTemporary;
+//	}
 
 
-	public Node() {
-		this.id = -1;
+	public Node(int id) {
+		super();
+		this.id = id;
 	}
+	
+	public Node() {
+		super();
+		this.id = -100;
+		this.blocks = new HashSet<>();
+		this.neighbors = new HashSet<>();
+		this.isSource = false;
+	}
+	
 
 
 	public boolean isSource() {
@@ -105,6 +126,41 @@ public class Node implements Serializable {
 
 	public void setMarked(boolean marked) {
 		this.marked = marked;
+	}
+
+
+	public double getSumWeight() {
+		return sumWeight;
+	}
+
+
+	public void setSumWeight(double sumWeight) {
+		this.sumWeight = sumWeight;
+	}
+
+
+	public int getNumberOfNeighbors() {
+		return numberOfNeighbors;
+	}
+
+
+	public void setNumberOfNeighbors(int numberOfNeighbors) {
+		this.numberOfNeighbors = numberOfNeighbors;
+	}
+
+
+	public static long getSerialversionuid() {
+		return serialVersionUID;
+	}
+
+
+	public Integer getTokenTemporary() {
+		return tokenTemporary;
+	}
+
+
+	public void setTokenTemporary(Integer tokenTemporary) {
+		this.tokenTemporary = tokenTemporary;
 	}
 
 

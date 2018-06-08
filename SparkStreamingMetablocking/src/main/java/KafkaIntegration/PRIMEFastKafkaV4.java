@@ -62,7 +62,7 @@ import tokens.KeywordGeneratorImpl;
 //Parallel-based Metablockig for Streaming Data
 public class PRIMEFastKafkaV4 {
   public static void main(String[] args) throws InterruptedException {
-	  String OUTPUT_PATH = "outputs/amazon-gpNew/";
+	  String OUTPUT_PATH = "outputs/amazongpNew1/";
 	  int timeWindow = 12000; //We have configured the period to x seconds (x * 1000 ms).
 	  
     //
@@ -73,7 +73,7 @@ public class PRIMEFastKafkaV4 {
     SparkSession spark = SparkSession
         .builder()
         .appName("streaming-Filtering")
-        .master("local[1]")
+        .master("local[4]")
         .getOrCreate();
     
 //    spark.sparkContext().getConf().set("spark.driver.memory", "4g");
@@ -154,7 +154,8 @@ public class PRIMEFastKafkaV4 {
 			}
 		});
     
-    JavaPairDStream<Integer, Iterable<Node>> streamGrouped = streamOfPairs.groupByKey();
+    //define the blocks based on the tokens <tk, [n1,n2,n3]>, where n is a node.
+    JavaPairDStream<Integer, Iterable<Node>> entityBlocks = streamOfPairs.groupByKey();
     
     
 	Function3<Integer, Optional<Iterable<Node>>, State<List<Node>>, Tuple2<Integer, List<Node>>> mappingFunctionBlockPreprocessed = (
@@ -184,11 +185,11 @@ public class PRIMEFastKafkaV4 {
 	// Using mapWithState, we just manipulate the update entities/blocks. It's a
 	// property provided by mapWithState. UpdateState manipulates with all data
 	// (force brute).
-	JavaMapWithStateDStream<Integer, Iterable<Node>, List<Node>, Tuple2<Integer, List<Node>>> storedBlocks = streamGrouped
+	JavaMapWithStateDStream<Integer, Iterable<Node>, List<Node>, Tuple2<Integer, List<Node>>> storedBlocks = entityBlocks
 			.mapWithState(StateSpec.function(mappingFunctionBlockPreprocessed));
 
 	// Avoid the increasing of data in memory
-	storedBlocks.checkpoint(new Duration(timeWindow * 3));
+	storedBlocks.checkpoint(new Duration(timeWindow * 10));
 	
 	 //convert to JavaPairDStream
 	JavaDStream<Tuple2<Integer, List<Node>>> dsBlocks = storedBlocks
@@ -241,7 +242,7 @@ public class PRIMEFastKafkaV4 {
 			intersect.retainAll(ent2);
 
 			// MACOBI strategy
-			if (Collections.min(intersect) == blockKey) {
+			if (!Collections.min(intersect).equals(blockKey)) {
 				return -1;
 			}
 
@@ -290,7 +291,7 @@ public class PRIMEFastKafkaV4 {
 		@Override
 		public Optional<Node> call(List<Node> values, Optional<Node> state)
 				throws Exception {
-			Node storedNode = state.or(new Node());
+			Node storedNode = state.or(new Node(-1));
 			for (Node newNode : values) {
 				if (storedNode.getId() == -1) {
 					storedNode = newNode;

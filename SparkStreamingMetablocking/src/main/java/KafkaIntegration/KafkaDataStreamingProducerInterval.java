@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.Properties;
 import java.util.Random;
 
-public class KafkaDataStreamingProducer {
+public class KafkaDataStreamingProducerInterval {
 
     public static void main(String[] args) throws InterruptedException {
         Properties props = new Properties();
@@ -20,7 +20,7 @@ public class KafkaDataStreamingProducer {
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         
 //        int[] timers = {10, 25, 50, 100, 250};
-        int[] timers = {100};
+        int[] timers = {12000};
         Random random = new Random();
         
         //TOPIC
@@ -53,6 +53,7 @@ public class KafkaDataStreamingProducer {
 		}
 		
 		int uniqueId = 0;
+		int stop = 200;
 		for (int i = 0; i < Math.max(EntityListSource.size(), EntityListTarget.size()); i++) {
 			if (i < EntityListSource.size()) {
 				EntityProfile entitySource = EntityListSource.get(i);
@@ -72,7 +73,10 @@ public class KafkaDataStreamingProducer {
 			
 			uniqueId++;
 			
-            Thread.sleep(timers[random.nextInt(timers.length)]);
+			if (uniqueId == stop) {
+				stop += 200;
+				Thread.sleep(12000);//sleep for 12 sec.
+			}
 		}
 		
         producer.close();
