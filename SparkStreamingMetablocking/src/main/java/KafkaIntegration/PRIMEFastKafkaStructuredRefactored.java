@@ -51,7 +51,7 @@ import tokens.KeywordGeneratorImpl;
 public class PRIMEFastKafkaStructuredRefactored {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 	  String OUTPUT_PATH = "outputs/abtbyStr1/";
-	  int timeWindow = 10; //We have configured the period to x seconds (x sec).
+	  int timeWindow = 20; //We have configured the period to x seconds (x sec).
 	  
     
     SparkSession spark = SparkSession
@@ -263,7 +263,7 @@ public class PRIMEFastKafkaStructuredRefactored {
 		// .format("parquet") // can be "orc", "json", "csv", etc.
 		// .option("checkpointLocation", "checkpoints/")
 		// .option("path", OUTPUT_PATH)
-		.trigger(Trigger.ProcessingTime(15 + " seconds"))
+		.trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
 		.start();
 
     query.awaitTermination();

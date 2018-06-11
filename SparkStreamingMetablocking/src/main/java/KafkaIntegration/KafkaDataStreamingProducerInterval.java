@@ -20,8 +20,8 @@ public class KafkaDataStreamingProducerInterval {
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         
 //        int[] timers = {10, 25, 50, 100, 250};
-        int[] timers = {12000};
-        Random random = new Random();
+//        int[] timers = {20000};
+//        Random random = new Random();
         
         //TOPIC
         final String topicName = "mytopic";
@@ -75,7 +75,7 @@ public class KafkaDataStreamingProducerInterval {
 			
 			if (uniqueId == stop) {
 				stop += 200;
-				Thread.sleep(12000);//sleep for 12 sec.
+				Thread.sleep(20000);//sleep for 12 sec.
 			}
 		}
 		
