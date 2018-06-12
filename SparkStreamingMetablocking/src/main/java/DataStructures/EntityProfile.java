@@ -66,7 +66,11 @@ public class EntityProfile implements Serializable {
 		attributes = new HashSet();
 		for (int i = 3; i < parts.length; i++) {//the first element is the key (avoid!)
 			String[] nameValue = parts[i].split(split2);
-			attributes.add(new Attribute(nameValue[0], nameValue[1]));
+			if (nameValue.length == 1) {
+				attributes.add(new Attribute(nameValue[0], ""));
+			} else {
+				attributes.add(new Attribute(nameValue[0], nameValue[1]));
+			}
 		}
 	}
 

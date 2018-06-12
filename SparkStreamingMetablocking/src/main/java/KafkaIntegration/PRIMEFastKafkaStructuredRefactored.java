@@ -50,6 +50,7 @@ import tokens.KeywordGeneratorImpl;
 //Parallel-based Metablockig for Streaming Data
 public class PRIMEFastKafkaStructuredRefactored {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
+	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = "outputs/abtbyStr1/";
 	  int timeWindow = 20; //We have configured the period to x seconds (x sec).
 	  
