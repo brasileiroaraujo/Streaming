@@ -19,6 +19,7 @@ public class Node implements Serializable {
 	private double sumWeight = 0.0;
 	private int numberOfNeighbors = 0;
 	private Integer tokenTemporary;
+	private boolean blackFlag = false;
 	
 	
 	public Node(int id, Set<Integer> blocks, Set<Tuple2<Integer, Double>> neighbors, boolean isSource) {
@@ -177,6 +178,14 @@ public class Node implements Serializable {
 			return output;
 		}
 		
+	}
+
+	public void setBlackFlag(boolean b) {
+		this.blackFlag = b;
+	}
+	
+	public boolean isBlackFlag() {
+		return blackFlag;
 	}
 	
 	

@@ -15,7 +15,7 @@ public class KafkaDataStreamingProducer {
 
     public static void main(String[] args) throws InterruptedException {
         Properties props = new Properties();
-        props.put("bootstrap.servers", "localhost:9092");
+        props.put("bootstrap.servers", "10.171.171.50:8088");//localhost:9092    10.171.171.50:8088
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         
@@ -27,6 +27,9 @@ public class KafkaDataStreamingProducer {
         final String topicName = "mytopic";
         
         //CHOOSE THE INPUT PATHS
+        String INPUT_PATH1 = args[0];
+        String INPUT_PATH2 = args[1];
+        
 //        String INPUT_PATH1 = "inputs/dataset1_imdb";
 //        String INPUT_PATH2 = "inputs/dataset2_dbpedia";
         
@@ -39,8 +42,8 @@ public class KafkaDataStreamingProducer {
 //        String INPUT_PATH1 = "inputs/dataset1_amazon";
 //        String INPUT_PATH2 = "inputs/dataset2_gp";
         
-        String INPUT_PATH1 = "inputs/dataset1_abt";
-        String INPUT_PATH2 = "inputs/dataset2_buy";
+//        String INPUT_PATH1 = "inputs/dataset1_abt";
+//        String INPUT_PATH2 = "inputs/dataset2_buy";
 
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         ArrayList<EntityProfile> EntityListSource = null;

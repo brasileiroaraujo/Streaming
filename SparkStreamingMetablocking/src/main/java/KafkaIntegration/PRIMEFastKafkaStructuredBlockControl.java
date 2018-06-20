@@ -48,23 +48,25 @@ import tokens.KeywordGeneratorImpl;
 
 
 //Parallel-based Metablockig for Streaming Data
-public class PRIMEFastKafkaStructuredRefactored {
-  public static void main(String[] args) throws InterruptedException, StreamingQueryException {
+public class PRIMEFastKafkaStructuredBlockControl {
+
+public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 //	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = "outputs/abtbyStr1/";
 	  int timeWindow = 20; //We have configured the period to x seconds (x sec).
+	  final double MAX_SIZE = 1200;
 	  
     
     SparkSession spark = SparkSession
     		  .builder()
     		  .appName("JavaStructuredNetworkWordCount")
-//    		  .master("local[4]")
+    		  .master("local[4]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
     		  .readStream()
     		  .format("kafka")
-    		  .option("kafka.bootstrap.servers", "10.171.171.50:8088")//localhost:9092    10.171.171.50:8088
+    		  .option("kafka.bootstrap.servers", "localhost:9092")
     		  .option("subscribe", "mytopic")
     		  .load()
     		  .selectExpr("CAST(value AS STRING)")
@@ -127,16 +129,25 @@ public class PRIMEFastKafkaStructuredRefactored {
 				public Tuple2<Integer, NodeCollection> call(Integer key, Iterator<Tuple2<Integer, Node>> values, GroupState<NodeCollection> state)
 						throws Exception {
 					NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
-					List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
-
-					for (Node entBlocks : count.getNodeList()) {
-						entBlocks.setMarked(false);
-					}
-
-					for (Tuple2<Integer, Node> entBlocks : listOfBlocks) {
-						entBlocks._2().setMarked(true);
-						count.add(entBlocks._2());
-					}
+					if (!count.isOnTheBlackList()) {
+						List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
+	
+	//					for (Node entBlocks : count.getNodeList()) {
+	//						entBlocks.setMarked(false);
+	//					}
+	
+						for (Tuple2<Integer, Node> entBlocks : listOfBlocks) {
+							entBlocks._2().setMarked(true);
+							count.add(entBlocks._2());
+						}
+						
+						if (count.getNodeList().size() > (0.1 * MAX_SIZE)) {
+							count.blackList();						
+						}
+					} 
+//					else {
+//						System.out.println();
+//					}
 
 					Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
 					state.update(count);

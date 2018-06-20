@@ -24,6 +24,24 @@ public class NodeCollection implements Serializable{
 	public void add(Node node) {
 		this.nodeList.add(node);
 	}
+
+	public void blackList() {
+		nodeList = new ArrayList<Node>();
+		Node blackNode = new Node();
+		blackNode.setBlackFlag(true);
+		nodeList.add(blackNode);
+	}
+	
+	public boolean isOnTheBlackList() {
+		if (!nodeList.isEmpty()) {
+//			System.out.println();
+			if (nodeList.get(0).isBlackFlag()) {
+				return true;
+			}
+		}
+			
+		return false;
+	}
 	
 	
 
