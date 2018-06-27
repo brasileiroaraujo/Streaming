@@ -64,7 +64,7 @@ public class PRIMEFastKafkaStructuredRefactored {
     Dataset<String> lines = spark
     		  .readStream()
     		  .format("kafka")
-    		  .option("kafka.bootstrap.servers", "10.171.171.50:8088")//localhost:9092    10.171.171.50:8088
+    		  .option("kafka.bootstrap.servers", args[0])//localhost:9092    10.171.171.50:8088
     		  .option("subscribe", "mytopic")
     		  .load()
     		  .selectExpr("CAST(value AS STRING)")
