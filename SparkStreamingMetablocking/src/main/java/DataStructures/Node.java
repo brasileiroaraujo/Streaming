@@ -20,6 +20,7 @@ public class Node implements Serializable {
 	private int numberOfNeighbors = 0;
 	private Integer tokenTemporary;
 	private boolean blackFlag = false;
+	private long startTime;
 	
 	
 	public Node(int id, Set<Integer> blocks, Set<Tuple2<Integer, Double>> neighbors, boolean isSource) {
@@ -28,6 +29,7 @@ public class Node implements Serializable {
 		this.blocks = blocks;
 		this.neighbors = neighbors;
 		this.isSource = isSource;
+		this.startTime = System.currentTimeMillis();
 	}
 	
 //	public Node(int id, Set<Integer> blocks, Set<Tuple2<Integer, Double>> neighbors, boolean isSource, Integer tokenTemporary) {
@@ -43,6 +45,7 @@ public class Node implements Serializable {
 	public Node(int id) {
 		super();
 		this.id = id;
+		this.startTime = System.currentTimeMillis();
 	}
 	
 	public Node() {
@@ -51,6 +54,7 @@ public class Node implements Serializable {
 		this.blocks = new HashSet<>();
 		this.neighbors = new HashSet<>();
 		this.isSource = false;
+		this.startTime = System.currentTimeMillis();
 	}
 	
 
@@ -186,6 +190,14 @@ public class Node implements Serializable {
 	
 	public boolean isBlackFlag() {
 		return blackFlag;
+	}
+
+	public long getStartTime() {
+		return startTime;
+	}
+
+	public void setStartTime(long startTime) {
+		this.startTime = startTime;
 	}
 	
 	

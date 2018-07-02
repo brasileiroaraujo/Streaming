@@ -42,6 +42,17 @@ public class NodeCollection implements Serializable{
 			
 		return false;
 	}
+
+	public void removeOldNodes(int timeThreshold) {
+		long currentTime = System.currentTimeMillis();
+		ArrayList<Node> copy = new ArrayList<Node>(nodeList);
+		for (Node node : copy) {
+			if ((currentTime - node.getStartTime()) > timeThreshold) {
+				nodeList.remove(node);
+			}
+		}
+		copy = null;
+	}
 	
 	
 
