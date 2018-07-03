@@ -47,7 +47,7 @@ public class NodeCollection implements Serializable{
 		long currentTime = System.currentTimeMillis();
 		ArrayList<Node> copy = new ArrayList<Node>(nodeList);
 		for (Node node : copy) {
-			if ((currentTime - node.getStartTime()) > timeThreshold) {
+			if ((currentTime - node.getStartTime()) > (timeThreshold*1000)) {//*1000 to convert in miliseconds
 				nodeList.remove(node);
 			}
 		}

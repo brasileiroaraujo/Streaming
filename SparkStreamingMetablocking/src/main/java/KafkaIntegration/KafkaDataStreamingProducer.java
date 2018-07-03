@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Properties;
 import java.util.Random;
 
+//localhost:9092 400 inputs/dataset1_abt inputs/dataset2_buy
 public class KafkaDataStreamingProducer {
 
     public static void main(String[] args) throws InterruptedException {
@@ -20,15 +21,15 @@ public class KafkaDataStreamingProducer {
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         
 //        int[] timers = {10, 25, 50, 100, 250};
-        int[] timers = {100};
+        int[] timers = {Integer.parseInt(args[1])};
         Random random = new Random();
         
         //TOPIC
         final String topicName = "mytopic";
         
         //CHOOSE THE INPUT PATHS
-        String INPUT_PATH1 = args[1];
-        String INPUT_PATH2 = args[2];
+        String INPUT_PATH1 = args[2];
+        String INPUT_PATH2 = args[3];
         
 //        String INPUT_PATH1 = "inputs/dataset1_imdb";
 //        String INPUT_PATH2 = "inputs/dataset2_dbpedia";

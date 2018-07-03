@@ -48,23 +48,24 @@ import tokens.KeywordGeneratorImpl;
 
 
 //Parallel-based Metablockig for Streaming Data
+//20 localhost:9092 60
 public class PRIMEStructuredWindowed {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
-//	  System.setProperty("hadoop.home.dir", "K:/winutils/");
+	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = "outputs/abtbyStr1/";
-	  int timeWindow = 20; //We have configured the period to x seconds (x sec).
+	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
 	  
     
     SparkSession spark = SparkSession
     		  .builder()
-    		  .appName("JavaStructuredNetworkWordCount")
-//    		  .master("local[4]")
+    		  .appName("PRIMEStructuredWindowed")
+    		  .master("local[8]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
     		  .readStream()
     		  .format("kafka")
-    		  .option("kafka.bootstrap.servers", args[0])//localhost:9092    10.171.171.50:8088
+    		  .option("kafka.bootstrap.servers", args[1])//localhost:9092    10.171.171.50:8088
     		  .option("subscribe", "mytopic")
     		  .load()
     		  .selectExpr("CAST(value AS STRING)")
@@ -129,8 +130,7 @@ public class PRIMEStructuredWindowed {
 					NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
 					List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
 					
-					int time = 60;
-					count.removeOldNodes(time);//time in seconds
+					count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
 					
 					for (Node entBlocks : count.getNodeList()) {
 						entBlocks.setMarked(false);
