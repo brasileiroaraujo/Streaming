@@ -61,11 +61,11 @@ import tokens.KeywordGeneratorImpl;
 
 
 //Parallel-based Metablockig for Streaming Data
-//20 localhost:9092 60
+//20 localhost:9092 60 C:\\Users\\lutibr\\Documents\\checkpoint C:\\Users\\lutibr\\Documents\\outputs\\gp-amazonUP2
 public class PRIMEStreamingWindowed {
   public static void main(String[] args) throws InterruptedException {
-	  System.setProperty("hadoop.home.dir", "K:/winutils/");
-	  String OUTPUT_PATH = "C:\\Users\\lutibr\\Documents\\outputs\\gp-amazonUP2";
+	  //System.setProperty("hadoop.home.dir", "K:/winutils/");
+	  String OUTPUT_PATH = args[4];
 	  int timeWindow = Integer.parseInt(args[0]) * 1000; //We have configured the period to x seconds (x * 1000 ms).
 	  
     //
@@ -76,7 +76,7 @@ public class PRIMEStreamingWindowed {
     SparkSession spark = SparkSession
         .builder()
         .appName("PRIMEStreamingWindowed")
-        .master("local[2]")
+        //.master("local[2]")
         .getOrCreate();
     
 //    spark.sparkContext().getConf().set("spark.driver.memory", "4g");
@@ -95,7 +95,7 @@ public class PRIMEStreamingWindowed {
     //Notice that Spark Streaming is not designed for periods shorter than about half a second. If you need a shorter delay in your processing, try Flink or Storm instead.
     JavaStreamingContext ssc = new JavaStreamingContext(sc, new Duration(timeWindow));
     //checkpointing is necessary since states are used
-    ssc.checkpoint("C:\\Users\\lutibr\\Documents\\checkpoint");
+    ssc.checkpoint(args[3]);
     
 
     //kafka pool to receive streaming data

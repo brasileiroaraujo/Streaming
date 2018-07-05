@@ -24,11 +24,16 @@ import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.ForeachWriter;
 import org.apache.spark.sql.KeyValueGroupedDataset;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.execution.streaming.ProgressReporter;
 import org.apache.spark.sql.streaming.GroupState;
 import org.apache.spark.sql.streaming.GroupStateTimeout;
 import org.apache.spark.sql.streaming.StreamingQuery;
 import org.apache.spark.sql.streaming.StreamingQueryException;
+import org.apache.spark.sql.streaming.StreamingQueryListener;
 import org.apache.spark.sql.streaming.Trigger;
+import org.apache.spark.sql.streaming.StreamingQueryListener.QueryProgressEvent;
+import org.apache.spark.sql.streaming.StreamingQueryListener.QueryStartedEvent;
+import org.apache.spark.sql.streaming.StreamingQueryListener.QueryTerminatedEvent;
 import org.apache.spark.streaming.State;
 import org.apache.spark.util.DoubleAccumulator;
 import org.apache.spark.util.LongAccumulator;
@@ -52,7 +57,7 @@ import tokens.KeywordGeneratorImpl;
 public class PRIMEStructuredWindowed {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 	  System.setProperty("hadoop.home.dir", "K:/winutils/");
-	  String OUTPUT_PATH = "outputs/abtbyStr1/";
+	  //String OUTPUT_PATH = "outputs/abtbyStr1/";
 	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
 	  
     
@@ -260,15 +265,59 @@ public class PRIMEStructuredWindowed {
 //	  .trigger(Trigger.ProcessingTime("15 seconds"))
 //	  .start();
     
+    spark.streams().addListener(new StreamingQueryListener() {
+		
+    	@Override
+        public void onQueryStarted(QueryStartedEvent queryStarted) {
+            //System.out.println("Query started: " + queryStarted.id());
+        }
+        @Override
+        public void onQueryTerminated(QueryTerminatedEvent queryTerminated) {
+            //System.out.println("Query terminated: " + queryTerminated.id());
+        }
+        @Override
+        public void onQueryProgress(QueryProgressEvent queryProgress) {
+            System.out.println("Query duration (ms): " + queryProgress.progress().durationMs().get("triggerExecution"));
+        }
+	});
+    
     // Start running the query that prints the running counts to the console
-	StreamingQuery query = prunedGraph.writeStream()
+	/*StreamingQuery query = prunedGraph.writeStream()
 		.outputMode("update")
 		.format("console")
 		// .format("parquet") // can be "orc", "json", "csv", etc.
 		// .option("checkpointLocation", "checkpoints/")
 		// .option("path", OUTPUT_PATH)
 		.trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
-		.start();
+		.start();*/
+    
+    StreamingQuery query = prunedGraph.writeStream()
+    		.outputMode("update")
+    		.foreach(new ForeachWriter<String>() {
+				
+				@Override
+				public void process(String arg0) {
+					// TODO Auto-generated method stub
+					System.out.println(arg0);
+				}
+				
+				@Override
+				public boolean open(long arg0, long arg1) {
+					// TODO Auto-generated method stub
+					return true;
+				}
+				
+				@Override
+				public void close(Throwable arg0) {
+					
+				}
+			})
+    		// .format("parquet") // can be "orc", "json", "csv", etc.
+    		// .option("checkpointLocation", "checkpoints/")
+    		// .option("path", OUTPUT_PATH)
+    		.trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
+    		.start();
+	
 
     query.awaitTermination();
 
