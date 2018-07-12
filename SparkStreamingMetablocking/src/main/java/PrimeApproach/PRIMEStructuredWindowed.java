@@ -1,5 +1,6 @@
-package KafkaIntegration;
+package PrimeApproach;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -44,6 +45,7 @@ import DataStructures.Attribute;
 import DataStructures.EntityProfile;
 import DataStructures.Node;
 import DataStructures.NodeCollection;
+import DataStructures.SingletonFileWriter;
 import scala.Function1;
 import scala.Tuple2;
 import scala.Tuple3;
@@ -57,7 +59,7 @@ import tokens.KeywordGeneratorImpl;
 public class PRIMEStructuredWindowed {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 	  System.setProperty("hadoop.home.dir", "K:/winutils/");
-	  //String OUTPUT_PATH = "outputs/abtbyStr1/";
+	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
 	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
 	  
     
@@ -251,20 +253,6 @@ public class PRIMEStructuredWindowed {
 
 	}, Encoders.STRING());
     
-    		
-    		
-    //Streaming query that stores the output incrementally.
-//    StreamingQuery query = prunedGraph
-////	  .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
-//	  .writeStream()
-//	  .outputMode("update")
-//	  .format("kafka")
-//	  .option("kafka.bootstrap.servers", "localhost:9092")
-//	  .option("checkpointLocation", "checkpoints/")
-//	  .option("topic", "outputTopic")
-//	  .trigger(Trigger.ProcessingTime("15 seconds"))
-//	  .start();
-    
     spark.streams().addListener(new StreamingQueryListener() {
 		
     	@Override
@@ -280,6 +268,20 @@ public class PRIMEStructuredWindowed {
             System.out.println("Query duration (ms): " + queryProgress.progress().durationMs().get("triggerExecution"));
         }
 	});
+    		
+    //Streaming query that stores the output incrementally.
+    StreamingQuery query = prunedGraph
+	  .selectExpr("CAST(value AS STRING)")
+	  .writeStream()
+	  .outputMode("update")
+	  .format("kafka")
+	  .option("kafka.bootstrap.servers", args[1])
+	  .option("checkpointLocation", args[4])//C:\\Users\\lutibr\\Documents\\checkpoint\\
+	  .option("topic", "outputtopic")
+	  .trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
+	  .start();
+    
+    
     
     // Start running the query that prints the running counts to the console
 	/*StreamingQuery query = prunedGraph.writeStream()
@@ -291,32 +293,42 @@ public class PRIMEStructuredWindowed {
 		.trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
 		.start();*/
     
-    StreamingQuery query = prunedGraph.writeStream()
-    		.outputMode("update")
-    		.foreach(new ForeachWriter<String>() {
-				
-				@Override
-				public void process(String arg0) {
-					// TODO Auto-generated method stub
-					System.out.println(arg0);
-				}
-				
-				@Override
-				public boolean open(long arg0, long arg1) {
-					// TODO Auto-generated method stub
-					return true;
-				}
-				
-				@Override
-				public void close(Throwable arg0) {
-					
-				}
-			})
-    		// .format("parquet") // can be "orc", "json", "csv", etc.
-    		// .option("checkpointLocation", "checkpoints/")
-    		// .option("path", OUTPUT_PATH)
-    		.trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
-    		.start();
+//    StreamingQuery query = prunedGraph.selectExpr("CAST(value AS STRING)").writeStream()
+//    		.outputMode("update")
+//			.format("kafka")
+//			.option("kafka.bootstrap.servers", args[1])
+//			.option("topic", "outputTopic")
+//			.start();
+    
+//    StreamingQuery query = prunedGraph.writeStream()
+//    		.outputMode("update")
+//    		.foreach(new ForeachWriter<String>() {
+//    			SingletonFileWriter writer;
+//				
+//				@Override
+//				public void process(String line) {
+//					//System.out.println(line);
+//					try {
+//						writer.save(line);
+//					} catch (IOException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//						System.out.println("Error to save the output file.");
+//					}
+//				}
+//				
+//				@Override
+//				public boolean open(long elementID, long increment) {
+//					writer = SingletonFileWriter.getInstance(OUTPUT_PATH, increment);
+//					return true;
+//				}
+//				
+//				@Override
+//				public void close(Throwable arg0) {
+//				}
+//			})
+//    		.trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
+//    		.start();
 	
 
     query.awaitTermination();
