@@ -43,10 +43,13 @@ import com.google.common.collect.Lists;
 
 import DataStructures.Attribute;
 import DataStructures.EntityProfile;
+import DataStructures.MetablockingNode;
+import DataStructures.MetablockingNodeCollection;
 import DataStructures.Node;
 import DataStructures.NodeCollection;
 import DataStructures.SingletonFileWriter;
 import scala.Function1;
+import scala.Function2;
 import scala.Tuple2;
 import scala.Tuple3;
 import scala.runtime.BoxedUnit;
@@ -56,7 +59,7 @@ import tokens.KeywordGeneratorImpl;
 
 //Parallel-based Metablockig for Streaming Data
 //20 localhost:9092 60
-public class PRIMEStructuredWindowed {
+public class MetablockingStructuredWindowed {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
@@ -66,7 +69,7 @@ public class PRIMEStructuredWindowed {
     SparkSession spark = SparkSession
     		  .builder()
     		  .appName("PRIMEStructuredWindowed")
-    		  .master("local[6]")
+    		  .master("local[8]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
@@ -89,11 +92,11 @@ public class PRIMEStructuredWindowed {
 //	DoubleAccumulator sumTimePerInterations = spark.sparkContext().doubleAccumulator();
 //	DoubleAccumulator numberInterations = spark.sparkContext().doubleAccumulator();
     
-    Dataset<Tuple2<Integer, Node>> streamOfPairs = entities.flatMap(new FlatMapFunction<EntityProfile, Tuple2<Integer, Node>>() {
+    Dataset<Tuple2<Integer, MetablockingNode>> streamOfPairs = entities.flatMap(new FlatMapFunction<EntityProfile, Tuple2<Integer, MetablockingNode>>() {
 
 		@Override
 		public Iterator call(EntityProfile se) throws Exception {
-			List<Tuple2<Integer, Node>> output = new ArrayList<Tuple2<Integer, Node>>();
+			List<Tuple2<Integer, MetablockingNode>> output = new ArrayList<Tuple2<Integer, MetablockingNode>>();
 			
 			Set<Integer> cleanTokens = new HashSet<Integer>();
 			
@@ -105,50 +108,121 @@ public class PRIMEStructuredWindowed {
 				}
 			}
 			
-			Node node = new Node(se.getKey(), cleanTokens, new HashSet<>(), se.isSource());
+			MetablockingNode node = new MetablockingNode(se.getKey(), se.isSource());
 			
 			for (Integer tk : cleanTokens) {
-				node.setTokenTemporary(tk);
-				output.add(new Tuple2<Integer, Node>(tk, node));
+				output.add(new Tuple2<Integer, MetablockingNode>(tk, node));
 			}
 			
 			return output.iterator();
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class)));
     
     
 	//define the blocks based on the tokens <tk, [n1,n2,n3]>, where n is a node.
-    KeyValueGroupedDataset<Integer, Tuple2<Integer, Node>> entityBlocks = streamOfPairs.groupByKey(new MapFunction<Tuple2<Integer, Node>, Integer>() {
+    KeyValueGroupedDataset<Integer, Tuple2<Integer, MetablockingNode>> entityBlocks = streamOfPairs.groupByKey(new MapFunction<Tuple2<Integer, MetablockingNode>, Integer>() {
 
 		@Override
-		public Integer call(Tuple2<Integer, Node> n) throws Exception {
+		public Integer call(Tuple2<Integer, MetablockingNode> n) throws Exception {
 			return n._1();
 		}
 	}, Encoders.INT());
     
     
+    
+    //coloca as tuplas no formato <e1, b1>
+    Dataset<Tuple2<String, Integer>> pairEntityBlock = entityBlocks.flatMapGroups(new FlatMapGroupsFunction() {
+
+		@Override
+		public Iterator<Tuple2<String, Integer>> call(Object arg0, Iterator arg1) throws Exception {
+			List<Tuple2<Integer, MetablockingNode>> values = Lists.newArrayList(arg1);
+			ArrayList<Tuple2<String, Integer>> output = new ArrayList<Tuple2<String, Integer>>();
+			
+			for (Tuple2<Integer, MetablockingNode> e : values) {
+				if (e._2().isSource()) {
+					output.add(new Tuple2<String, Integer>("S" + e._2().getEntityId(), e._1));
+				} else {
+					output.add(new Tuple2<String, Integer>("T" + e._2().getEntityId(), e._1));
+				}
+			}
+			return output.iterator();
+		}
+	}, Encoders.tuple(Encoders.STRING(), Encoders.INT()));
+    
+    
+    //coloca as tuplas no formato <e1, [b1,b2]>
+    KeyValueGroupedDataset<String, Tuple2<String, Integer>> entitySetBlocks = pairEntityBlock.groupByKey(new MapFunction<Tuple2<String, Integer>, String>() {
+
+		@Override
+		public String call(Tuple2<String, Integer> n) throws Exception {
+			return n._1();
+		}
+	}, Encoders.STRING());
+    
+    
+    
+    //coloca as tuplas no formato <b1, (e1, b1, b2)>
+    Dataset<Tuple2<Integer, MetablockingNode>> blockEntityAndAllBlocks = entitySetBlocks.flatMapGroups(new FlatMapGroupsFunction() {
+
+		@Override
+		public Iterator<Tuple2<Integer, MetablockingNode>> call(Object arg0, Iterator arg1) throws Exception {
+			List<Tuple2<String, Integer>> values = Lists.newArrayList(arg1);
+			ArrayList<Tuple2<Integer, MetablockingNode>> output = new ArrayList<Tuple2<Integer, MetablockingNode>>();
+			
+			String key = (String) arg0;
+			MetablockingNode metaNode;
+			if (key.charAt(0) == 'S') {
+				metaNode = new MetablockingNode(Integer.parseInt(key.substring(1, key.length())), true);
+			} else {
+				metaNode = new MetablockingNode(Integer.parseInt(key.substring(1, key.length())), false);
+			}
+			 
+			for (Tuple2<String, Integer> entBlocks : values) {
+				metaNode.addInBlocks(entBlocks._2());
+			}
+			
+			for (Tuple2<String, Integer> entBlocks : values) {
+				output.add(new Tuple2<Integer, MetablockingNode>(entBlocks._2(), metaNode));
+			}
+			return output.iterator();
+		}
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class)));
+    
+    
+    
+    //coloca as tuplas no formato <b1, [(e1, b1, b2), (e2, b1), (e3, b1, b2)]>
+    KeyValueGroupedDataset<Integer, Tuple2<Integer, MetablockingNode>> blockPreprocessed = blockEntityAndAllBlocks.groupByKey(new MapFunction<Tuple2<Integer, MetablockingNode>, Integer>() {
+
+		@Override
+		public Integer call(Tuple2<Integer, MetablockingNode> n) throws Exception {
+			return n._1();
+		}
+	}, Encoders.INT());
+    
+    
+    
     //State function
-    MapGroupsWithStateFunction<Integer, Tuple2<Integer, Node>, NodeCollection, Tuple2<Integer, NodeCollection>> stateUpdateFunc =
-    	      new MapGroupsWithStateFunction<Integer, Tuple2<Integer, Node>, NodeCollection, Tuple2<Integer, NodeCollection>>() {
+    MapGroupsWithStateFunction<Integer, Tuple2<Integer, MetablockingNode>, MetablockingNodeCollection, Tuple2<Integer, MetablockingNodeCollection>> stateUpdateFunc =
+    	      new MapGroupsWithStateFunction<Integer, Tuple2<Integer, MetablockingNode>, MetablockingNodeCollection, Tuple2<Integer, MetablockingNodeCollection>>() {
 
 				@Override
-				public Tuple2<Integer, NodeCollection> call(Integer key, Iterator<Tuple2<Integer, Node>> values, GroupState<NodeCollection> state)
+				public Tuple2<Integer, MetablockingNodeCollection> call(Integer key, Iterator<Tuple2<Integer, MetablockingNode>> values, GroupState<MetablockingNodeCollection> state)
 						throws Exception {
-					NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
-					List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
+					MetablockingNodeCollection count = (state.exists() ? state.get() : new MetablockingNodeCollection());
+					List<Tuple2<Integer, MetablockingNode>> listOfBlocks = IteratorUtils.toList(values);
 					
 					count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
 					
-					for (Node entBlocks : count.getNodeList()) {
+					for (MetablockingNode entBlocks : count.getNodeList()) {
 						entBlocks.setMarked(false);
 					}
 
-					for (Tuple2<Integer, Node> entBlocks : listOfBlocks) {
+					for (Tuple2<Integer, MetablockingNode> entBlocks : listOfBlocks) {
 						entBlocks._2().setMarked(true);
 						count.add(entBlocks._2());
 					}
 
-					Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
+					Tuple2<Integer, MetablockingNodeCollection> thisOne = new Tuple2<>(key, count);
 					state.update(count);
 
 					return thisOne;
@@ -156,35 +230,37 @@ public class PRIMEStructuredWindowed {
     	      };
 	
     //Save the entity blocks on State to be used in the nexts increments. 
-    Dataset<Tuple2<Integer, NodeCollection>> storedBlocks = entityBlocks.mapGroupsWithState(
+    Dataset<Tuple2<Integer, MetablockingNodeCollection>> storedBlocks = blockPreprocessed.mapGroupsWithState(
             stateUpdateFunc,
-            Encoders.javaSerialization(NodeCollection.class),
-            Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(NodeCollection.class)));
+            Encoders.javaSerialization(MetablockingNodeCollection.class),
+            Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNodeCollection.class)));
 //            GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
+    
+    
     
     
     
     DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
     
     //The comparison between the entities (i.e., the Nodes) are performed.
-    Dataset<Tuple2<Integer, Node>> pairEntityBlock = storedBlocks.flatMap(new FlatMapFunction<Tuple2<Integer, NodeCollection>, Tuple2<Integer, Node>>() {
+    Dataset<Tuple2<Integer, MetablockingNode>> similarities = storedBlocks.flatMap(new FlatMapFunction<Tuple2<Integer, MetablockingNodeCollection>, Tuple2<Integer, MetablockingNode>>() {
 		@Override
-		public Iterator<Tuple2<Integer, Node>> call(Tuple2<Integer, NodeCollection> t) throws Exception {
-			List<Node> entitiesToCompare = t._2().getNodeList();
-			List<Tuple2<Integer, Node>> output = new ArrayList<Tuple2<Integer, Node>>();
+		public Iterator<Tuple2<Integer, MetablockingNode>> call(Tuple2<Integer, MetablockingNodeCollection> t) throws Exception {
+			List<MetablockingNode> entitiesToCompare = t._2().getNodeList();
+			List<Tuple2<Integer, MetablockingNode>> output = new ArrayList<Tuple2<Integer, MetablockingNode>>();
 			for (int i = 0; i < entitiesToCompare.size(); i++) {
-				Node n1 = entitiesToCompare.get(i);
+				MetablockingNode n1 = entitiesToCompare.get(i);
 				for (int j = i+1; j < entitiesToCompare.size(); j++) {
-					Node n2 = entitiesToCompare.get(j);
+					MetablockingNode n2 = entitiesToCompare.get(j);
 					//Only compare nodes from distinct sources and marked as new (avoid recompute comparisons)
 					if (n1.isSource() != n2.isSource() && (n1.isMarked() || n2.isMarked())) {
 						double similarity = calculateSimilarity(t._1(), n1.getBlocks(), n2.getBlocks());
 						if (similarity >= 0) {
 							numberOfComparisons.add(1);
 							if (n1.isSource()) {
-								n1.addNeighbor(new Tuple2<Integer, Double>(n2.getId(), similarity));
+								n1.addNeighbor(new Tuple2<Integer, Double>(n2.getEntityId(), similarity));
 							} else {
-								n2.addNeighbor(new Tuple2<Integer, Double>(n1.getId(), similarity));
+								n2.addNeighbor(new Tuple2<Integer, Double>(n1.getEntityId(), similarity));
 							}
 						}
 						
@@ -192,9 +268,9 @@ public class PRIMEStructuredWindowed {
 				}
 			}
 			
-			for (Node node : entitiesToCompare) {
+			for (MetablockingNode node : entitiesToCompare) {
 				if (node.isSource()) {
-					output.add(new Tuple2<Integer, Node>(node.getId(), node));
+					output.add(new Tuple2<Integer, MetablockingNode>(node.getEntityId(), node));
 				}
 			}
 			return output.iterator();
@@ -217,37 +293,37 @@ public class PRIMEStructuredWindowed {
 				return 0;
 			}
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class)));
     
     
     
     //A beginning block is generated, notice that we have all the Neighbors of each entity.
-    KeyValueGroupedDataset<Integer, Tuple2<Integer, Node>> graph = pairEntityBlock.groupByKey(new MapFunction<Tuple2<Integer, Node>, Integer>() {
+    KeyValueGroupedDataset<Integer, Tuple2<Integer, MetablockingNode>> graph = similarities.groupByKey(new MapFunction<Tuple2<Integer, MetablockingNode>, Integer>() {
 
 		@Override
-		public Integer call(Tuple2<Integer, Node> n) throws Exception {
+		public Integer call(Tuple2<Integer, MetablockingNode> n) throws Exception {
 			return n._1();
 		}
 	}, Encoders.INT());
     
     
     //Execute the pruning removing the low edges (entities in the Neighbors list)
-    Dataset<String> prunedGraph = graph.mapGroups(new MapGroupsFunction<Integer, Tuple2<Integer, Node>, String>() {
+    Dataset<String> prunedGraph = graph.mapGroups(new MapGroupsFunction<Integer, Tuple2<Integer, MetablockingNode>, String>() {
     	
     	
     	@Override
-		public String call(Integer key, Iterator<Tuple2<Integer, Node>> values)
+		public String call(Integer key, Iterator<Tuple2<Integer, MetablockingNode>> values)
 				throws Exception {
-    		List<Tuple2<Integer, Node>> nodes = IteratorUtils.toList(values);
+    		List<Tuple2<Integer, MetablockingNode>> nodes = IteratorUtils.toList(values);
 			
-			Node n1 = nodes.get(0)._2();//get the first node to merge with others.
+    		MetablockingNode n1 = nodes.get(0)._2();//get the first node to merge with others.
 			for (int j = 1; j < nodes.size(); j++) {
-				Node n2 = nodes.get(j)._2();
+				MetablockingNode n2 = nodes.get(j)._2();
 				n1.addSetNeighbors(n2);
 			}
 			
 			n1.pruning();
-			return n1.getId() + "," + n1.toString();
+			return n1.getEntityId() + "," + n1.toString();
 		}
 
 

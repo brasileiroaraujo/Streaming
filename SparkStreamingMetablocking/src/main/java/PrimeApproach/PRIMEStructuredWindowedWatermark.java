@@ -56,7 +56,7 @@ import tokens.KeywordGeneratorImpl;
 
 //Parallel-based Metablockig for Streaming Data
 //20 localhost:9092 60
-public class PRIMEStructuredWindowed {
+public class PRIMEStructuredWindowedWatermark {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
@@ -134,24 +134,34 @@ public class PRIMEStructuredWindowed {
 				@Override
 				public Tuple2<Integer, NodeCollection> call(Integer key, Iterator<Tuple2<Integer, Node>> values, GroupState<NodeCollection> state)
 						throws Exception {
-					NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
-					List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
+					if (state.hasTimedOut()) {            // If called when timing out, remove the state
+				          state.remove();
+				          Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, state.get());
+				          return thisOne;
+
+				    } else {
+				    	NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
+						List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
+						
+						count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
+						
+						for (Node entBlocks : count.getNodeList()) {
+							entBlocks.setMarked(false);
+						}
+
+						for (Tuple2<Integer, Node> entBlocks : listOfBlocks) {
+							entBlocks._2().setMarked(true);
+							count.add(entBlocks._2());
+						}
+
+						Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
+						state.update(count);
+						state.setTimeoutDuration(60000);
+
+						return thisOne;
+				    }
 					
-					count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
 					
-					for (Node entBlocks : count.getNodeList()) {
-						entBlocks.setMarked(false);
-					}
-
-					for (Tuple2<Integer, Node> entBlocks : listOfBlocks) {
-						entBlocks._2().setMarked(true);
-						count.add(entBlocks._2());
-					}
-
-					Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
-					state.update(count);
-
-					return thisOne;
 				}
     	      };
 	
@@ -159,8 +169,8 @@ public class PRIMEStructuredWindowed {
     Dataset<Tuple2<Integer, NodeCollection>> storedBlocks = entityBlocks.mapGroupsWithState(
             stateUpdateFunc,
             Encoders.javaSerialization(NodeCollection.class),
-            Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(NodeCollection.class)));
-//            GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
+            Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(NodeCollection.class)),
+            GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
     
     
     
@@ -271,6 +281,7 @@ public class PRIMEStructuredWindowed {
     		
     //Streaming query that stores the output incrementally.
     StreamingQuery query = prunedGraph
+//      .withWatermark("event_time", "60 seconds")
 	  .selectExpr("CAST(value AS STRING)")
 	  .writeStream()
 	  .outputMode("update")
