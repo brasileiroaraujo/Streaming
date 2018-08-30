@@ -1,7 +1,6 @@
 package PrimeApproach;
 
 import java.io.IOException;
-import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -13,6 +12,7 @@ import java.util.stream.StreamSupport;
 
 import org.apache.commons.collections.IteratorUtils;
 import org.apache.spark.Accumulator;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.FlatMapGroupsFunction;
@@ -25,11 +25,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.ForeachWriter;
 import org.apache.spark.sql.KeyValueGroupedDataset;
-import org.apache.spark.sql.Row;
-import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder;
-import org.apache.spark.sql.catalyst.encoders.RowEncoder;
 import org.apache.spark.sql.execution.streaming.ProgressReporter;
 import org.apache.spark.sql.streaming.GroupState;
 import org.apache.spark.sql.streaming.GroupStateTimeout;
@@ -37,8 +33,6 @@ import org.apache.spark.sql.streaming.StreamingQuery;
 import org.apache.spark.sql.streaming.StreamingQueryException;
 import org.apache.spark.sql.streaming.StreamingQueryListener;
 import org.apache.spark.sql.streaming.Trigger;
-import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.streaming.StreamingQueryListener.QueryProgressEvent;
 import org.apache.spark.sql.streaming.StreamingQueryListener.QueryStartedEvent;
 import org.apache.spark.sql.streaming.StreamingQueryListener.QueryTerminatedEvent;
@@ -48,6 +42,7 @@ import org.apache.spark.util.LongAccumulator;
 
 import com.google.common.collect.Lists;
 
+import AccumulatorsAndBroadcasts.StreamingAccumulator;
 import DataStructures.Attribute;
 import DataStructures.EntityProfile;
 import DataStructures.Node;
@@ -63,7 +58,7 @@ import tokens.KeywordGeneratorImpl;
 
 //Parallel-based Metablockig for Streaming Data
 //20 localhost:9092 60
-public class PRIMEStructuredWindowedWatermark {
+public class PRIMEStructuredGWNP {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
@@ -72,7 +67,7 @@ public class PRIMEStructuredWindowedWatermark {
     
     SparkSession spark = SparkSession
     		  .builder()
-    		  .appName("PRIMEStructuredWindowed")
+    		  .appName("PRIMEStructured")
     		  .master("local[6]")
     		  .getOrCreate();
     
@@ -83,43 +78,11 @@ public class PRIMEStructuredWindowedWatermark {
     		  .option("subscribe", "mytopic")
     		  .load()
     		  .selectExpr("CAST(value AS STRING)")
-    	      .as(Encoders.STRING()); //.withWatermark("event_time", "60 seconds")
-    
-    StructType structType = new StructType();
-    structType = structType.add("value", DataTypes.StringType, false);
-    structType = structType.add("creation", DataTypes.TimestampType, false);
-
-    ExpressionEncoder<Row> encoderRow = RowEncoder.apply(structType);
-    
-    Dataset<Row> entitiesMarked = lines.flatMap(new FlatMapFunction<String, Row>() {
-        @Override
-        public Iterator<Row> call(String s) throws Exception {
-            // a static map operation to demonstrate
-            List<Object> data = new ArrayList<>();
-            data.add(s);
-            data.add(new Timestamp(System.currentTimeMillis()));
-            ArrayList<Row> list = new ArrayList<>();
-            list.add(RowFactory.create(data.toArray()));
-            return list.iterator();
-        }
-    }, encoderRow).withWatermark("creation", "5 seconds");
+    	      .as(Encoders.STRING());
     
     
     // Generate running word count
-    Dataset<EntityProfile> entities = entitiesMarked.map(r -> new EntityProfile(r.getString(0)), Encoders.bean(EntityProfile.class));
-    
-    
-    StreamingQuery query = entities
-//          .withWatermark("event_time", "60 seconds")
-    	  .selectExpr("CAST(creation AS STRING)")
-    	  .writeStream()
-    	  .outputMode("update")
-    	  .format("console")
-//    	  .option("kafka.bootstrap.servers", args[1])
-//    	  .option("checkpointLocation", args[4])//C:\\Users\\lutibr\\Documents\\checkpoint\\
-//    	  .option("topic", "outputtopic")
-    	  .trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
-    	  .start();
+    Dataset<EntityProfile> entities = lines.map(s -> new EntityProfile((String) s), Encoders.bean(EntityProfile.class));
     
 	//INIT TIME
     long initTime = System.currentTimeMillis();
@@ -173,34 +136,24 @@ public class PRIMEStructuredWindowedWatermark {
 				@Override
 				public Tuple2<Integer, NodeCollection> call(Integer key, Iterator<Tuple2<Integer, Node>> values, GroupState<NodeCollection> state)
 						throws Exception {
-					if (state.hasTimedOut()) {            // If called when timing out, remove the state
-				          state.remove();
-				          Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, state.get());
-				          return thisOne;
-
-				    } else {
-				    	NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
-						List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
-						
-						count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
-						
-						for (Node entBlocks : count.getNodeList()) {
-							entBlocks.setMarked(false);
-						}
-
-						for (Tuple2<Integer, Node> entBlocks : listOfBlocks) {
-							entBlocks._2().setMarked(true);
-							count.add(entBlocks._2());
-						}
-
-						Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
-						state.update(count);
-						state.setTimeoutDuration(60000);
-
-						return thisOne;
-				    }
+					NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
+					List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
 					
+					count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
 					
+					for (Node entBlocks : count.getNodeList()) {
+						entBlocks.setMarked(false);
+					}
+
+					for (Tuple2<Integer, Node> entBlocks : listOfBlocks) {
+						entBlocks._2().setMarked(true);
+						count.add(entBlocks._2());
+					}
+
+					Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
+					state.update(count);
+
+					return thisOne;
 				}
     	      };
 	
@@ -208,12 +161,13 @@ public class PRIMEStructuredWindowedWatermark {
     Dataset<Tuple2<Integer, NodeCollection>> storedBlocks = entityBlocks.mapGroupsWithState(
             stateUpdateFunc,
             Encoders.javaSerialization(NodeCollection.class),
-            Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(NodeCollection.class)),
-            GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
+            Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(NodeCollection.class)));
+//            GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
     
     
     
     DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
+//    LongAccumulator acc = StreamingAccumulator.getInstance(new JavaSparkContext(spark.sparkContext()));
     
     //The comparison between the entities (i.e., the Nodes) are performed.
     Dataset<Tuple2<Integer, Node>> pairEntityBlock = storedBlocks.flatMap(new FlatMapFunction<Tuple2<Integer, NodeCollection>, Tuple2<Integer, Node>>() {
@@ -229,7 +183,8 @@ public class PRIMEStructuredWindowedWatermark {
 					if (n1.isSource() != n2.isSource() && (n1.isMarked() || n2.isMarked())) {
 						double similarity = calculateSimilarity(t._1(), n1.getBlocks(), n2.getBlocks());
 						if (similarity >= 0) {
-							numberOfComparisons.add(1);
+							//numberOfComparisons.add(1);
+							numberOfComparisons.add((long)similarity);
 							if (n1.isSource()) {
 								n1.addNeighbor(new Tuple2<Integer, Double>(n2.getId(), similarity));
 							} else {
@@ -288,6 +243,9 @@ public class PRIMEStructuredWindowedWatermark {
 		public String call(Integer key, Iterator<Tuple2<Integer, Node>> values)
 				throws Exception {
     		List<Tuple2<Integer, Node>> nodes = IteratorUtils.toList(values);
+    		
+    		Double similaritySum = numberOfComparisons.value();
+    		System.out.println(similaritySum);
 			
 			Node n1 = nodes.get(0)._2();//get the first node to merge with others.
 			for (int j = 1; j < nodes.size(); j++) {
@@ -319,17 +277,16 @@ public class PRIMEStructuredWindowedWatermark {
 	});
     		
     //Streaming query that stores the output incrementally.
-//    StreamingQuery query = lines
-////      .withWatermark("event_time", "60 seconds")
-//	  .selectExpr("CAST(value AS STRING)")
-//	  .writeStream()
-//	  .outputMode("update")
-//	  .format("kafka")
-//	  .option("kafka.bootstrap.servers", args[1])
-//	  .option("checkpointLocation", args[4])//C:\\Users\\lutibr\\Documents\\checkpoint\\
-//	  .option("topic", "outputtopic")
-//	  .trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
-//	  .start();
+    StreamingQuery query = prunedGraph
+	  .selectExpr("CAST(value AS STRING)")
+	  .writeStream()
+	  .outputMode("update")
+	  .format("kafka")
+	  .option("kafka.bootstrap.servers", args[1])
+	  .option("checkpointLocation", args[4])//C:\\Users\\lutibr\\Documents\\checkpoint\\
+	  .option("topic", "outputtopic")
+	  .trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
+	  .start();
     
     
     

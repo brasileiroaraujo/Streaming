@@ -15,14 +15,18 @@
 package DataStructures;
 
 import java.io.Serializable;
+import java.sql.Timestamp;
 import java.util.HashSet;
 import java.util.Set;
+
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 
 /**
  *
  * @author gap2
  */
-
 public class EntityProfile implements Serializable {
 
 	private static final long serialVersionUID = 122354534453243447L;
@@ -31,6 +35,22 @@ public class EntityProfile implements Serializable {
 	private final String entityUrl;
 	private boolean isSource;
 	private int key;
+	private Timestamp creation;
+	
+	private static StructType structType = DataTypes.createStructType(new StructField[] {
+	        DataTypes.createStructField("key", DataTypes.IntegerType, false),
+	        DataTypes.createStructField("entityUrl", DataTypes.StringType, false),
+	        DataTypes.createStructField("isSource", DataTypes.IntegerType, false),
+	        DataTypes.createStructField("creation", DataTypes.TimestampType, false)
+	});
+
+	public static StructType getStructType() {
+	    return structType;
+	}
+
+	public Object[] getAllValues() {
+	    return new Object[]{key, entityUrl, isSource, creation};
+	}
 	
 	private final String split1 = "<<>>";
 	private final String split2 = "#=#";
@@ -51,6 +71,7 @@ public class EntityProfile implements Serializable {
 		String[] parts = csvLine.split(separator);
 		key = Integer.valueOf(parts[0]);
 		entityUrl = parts[1];
+		creation = new Timestamp(System.currentTimeMillis());
 		attributes = new HashSet();
 		for (int i = 1; i < parts.length; i++) {//the first element is the key (avoid!)
 			attributes.add(new Attribute("", parts[i]));
@@ -63,6 +84,7 @@ public class EntityProfile implements Serializable {
 		isSource = Boolean.parseBoolean(parts[0]);
 		entityUrl = parts[1];
 		key = Integer.valueOf(parts[2]);
+		creation = new Timestamp(System.currentTimeMillis());
 		attributes = new HashSet();
 		for (int i = 3; i < parts.length; i++) {//the first element is the key (avoid!)
 			String[] nameValue = parts[i].split(split2);
@@ -111,6 +133,19 @@ public class EntityProfile implements Serializable {
 				
 		return output;
 	}
+	
+	public String getStandardFormat2() {
+		String output = "";
+		output += isSource + split1;
+//		output += entityUrl + split1;//separate the attributes
+		output += key + split1;//separate the attributes
+		
+		for (Attribute attribute : attributes) {
+			output += attribute.getValue() + " ";
+		}
+				
+		return output;
+	}
 
 
 	public boolean isSource() {
@@ -121,5 +156,15 @@ public class EntityProfile implements Serializable {
 	public void setSource(boolean isSource) {
 		this.isSource = isSource;
 	}
+
+	public Timestamp getCreation() {
+		return creation;
+	}
+
+	public void setCreation(Timestamp creation) {
+		this.creation = creation;
+	}
+	
+	
 
 }

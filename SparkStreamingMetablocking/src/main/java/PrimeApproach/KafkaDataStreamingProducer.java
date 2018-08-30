@@ -71,7 +71,7 @@ public class KafkaDataStreamingProducer {
 				EntityProfile entitySource = EntityListSource.get(i);
 				entitySource.setSource(true);
 				entitySource.setKey(uniqueId);
-				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat());
+				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat2());
 	            producer.send(record);
 			}
 			
@@ -79,7 +79,7 @@ public class KafkaDataStreamingProducer {
 				EntityProfile entityTarget = EntityListTarget.get(i);
 				entityTarget.setSource(false);
 				entityTarget.setKey(uniqueId);
-				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat());
+				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat2());
 	            producer.send(record2);
 			}
 			

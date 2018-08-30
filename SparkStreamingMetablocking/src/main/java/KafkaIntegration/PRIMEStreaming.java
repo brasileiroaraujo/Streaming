@@ -31,10 +31,6 @@ import org.apache.spark.api.java.function.VoidFunction2;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.streaming.StreamingQueryListener;
-import org.apache.spark.sql.streaming.StreamingQueryListener.QueryProgressEvent;
-import org.apache.spark.sql.streaming.StreamingQueryListener.QueryStartedEvent;
-import org.apache.spark.sql.streaming.StreamingQueryListener.QueryTerminatedEvent;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.State;
@@ -63,10 +59,10 @@ import tokens.KeywordGeneratorImpl;
 
 
 //Parallel-based Metablockig for Streaming Data
-public class PRIMEFastKafkaV2 {
+public class PRIMEStreaming {
   public static void main(String[] args) throws InterruptedException {
 //	  String OUTPUT_PATH = "outputs/gp-amazonFastBig4/";
-	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x * 1000 ms).
+	  int timeWindow = 20; //We have configured the period to x seconds (x * 1000 ms).
 	  
     //
     // The "modern" way to initialize Spark is to create a SparkSession
@@ -95,12 +91,12 @@ public class PRIMEFastKafkaV2 {
     //Notice that Spark Streaming is not designed for periods shorter than about half a second. If you need a shorter delay in your processing, try Flink or Storm instead.
     JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.seconds(timeWindow));
     //checkpointing is necessary since states are used
-    ssc.checkpoint(args[2]);
+//    ssc.checkpoint("C:\\Users\\lutibr\\Documents\\checkpoint\\");
     
 
     //kafka pool to receive streaming data
     Map<String, String> kafkaParams = new HashMap<>();
-    kafkaParams.put("metadata.broker.list", args[1]);
+    kafkaParams.put("metadata.broker.list", "localhost:9092");
     Set<String> topics = Collections.singleton("mytopic");
 
     JavaPairInputDStream<String, String> streamOfRecords = KafkaUtils.createDirectStream(ssc,
@@ -118,19 +114,21 @@ public class PRIMEFastKafkaV2 {
     
     
     //INIT TIME
-//    long initTime = System.currentTimeMillis();
-//    Accumulator<Double> timeForEachInteration = sc.accumulator(initTime);
-//    Accumulator<Double> sumTimePerInterations = sc.accumulator(0.0);
-//    Accumulator<Integer> numberInterations = sc.accumulator(0);
+    long initTime = System.currentTimeMillis();
+    Accumulator<Double> timeForEachInteration = sc.accumulator(initTime);
+    Accumulator<Double> sumTimePerInterations = sc.accumulator(0.0);
+    Accumulator<Integer> numberInterations = sc.accumulator(0);
     
     
     // use a simple transformation to create a derived stream -- the original stream of Records is parsed
     // to produce a stream of KeyAndValue objects
     JavaDStream<EntityProfile> streamOfItems = streamOfRecords.map(s -> new EntityProfile(s._2()));
     
+    JavaDStream<EntityProfile> streamOfItemsWindow = streamOfItems.window(Durations.seconds(timeWindow), Durations.seconds(timeWindow*2));
+    
 
     JavaPairDStream<String, EntityProfile> streamOfPairs =
-        streamOfItems.flatMapToPair(new PairFlatMapFunction<EntityProfile, String, EntityProfile>() {
+    		streamOfItemsWindow.flatMapToPair(new PairFlatMapFunction<EntityProfile, String, EntityProfile>() {
 			@Override
 			public Iterator<Tuple2<String, EntityProfile>> call(EntityProfile se) throws Exception {
 				Set<Tuple2<String, EntityProfile>> output = new HashSet<Tuple2<String, EntityProfile>>();
@@ -224,42 +222,42 @@ public class PRIMEFastKafkaV2 {
 //	});
     
     
-//    Broadcast<Integer> iterationCount = sc.broadcast(numberInterations.value());
-    Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
-    			mappingFunctionBlockPreprocessed = (key, listBlocks, state) -> {
-//    	System.err.println("Chegou no State: " + ((System.currentTimeMillis() - initTime)/1000));
-    	List<List<String>> count = (state.exists() ? state.get() : new ArrayList<List<String>>());
-    	List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.get().spliterator(), false).collect(Collectors.toList());
-    	
-    	for (List<String> entBlocks : count) {
-    		entBlocks.set(0, entBlocks.get(0).replace("*", ""));
-		}
-    	
-    	for (List<String> entBlocks : listOfBlocks) {
-    		entBlocks.set(0, entBlocks.get(0)+"*");
-    		count.add(entBlocks);
-		}
-    	
-    	
-    	Tuple2<String, List<List<String>>> thisOne = new Tuple2<>(key, count);
-    	
-//    	if (count.size() > 200 /*|| (count.size() == 1 && iterationCount.getValue()%5==0)*/) {
-//    		state.remove();
-//		} else {
-//	        state.update(count);
+    Broadcast<Integer> iterationCount = sc.broadcast(numberInterations.value());
+//    Function3<String, Optional<Iterable<List<String>>>, State<List<List<String>>>, Tuple2<String, List<List<String>>>> 
+//    			mappingFunctionBlockPreprocessed = (key, listBlocks, state) -> {
+////    	System.err.println("Chegou no State: " + ((System.currentTimeMillis() - initTime)/1000));
+//    	List<List<String>> count = (state.exists() ? state.get() : new ArrayList<List<String>>());
+//    	List<List<String>> listOfBlocks = StreamSupport.stream(listBlocks.get().spliterator(), false).collect(Collectors.toList());
+//    	
+//    	for (List<String> entBlocks : count) {
+//    		entBlocks.set(0, entBlocks.get(0).replace("*", ""));
 //		}
-    	state.update(count);
-        
-        return thisOne;
-    };
-    
-    //save in state.
-    //Using mapWithState, we just manipulate the update entities/blocks. It's a property provided by mapWithState. UpdateState manipulates with all data (force brute).
-    JavaMapWithStateDStream<String, Iterable<List<String>>, List<List<String>>, Tuple2<String, List<List<String>>>> finalOutputProcessed =
-    		blockPreprocessed.mapWithState(StateSpec.function(mappingFunctionBlockPreprocessed));
-    
-    //Avoid the increasing of data in memory
-    finalOutputProcessed.checkpoint(Durations.seconds(timeWindow*3));
+//    	
+//    	for (List<String> entBlocks : listOfBlocks) {
+//    		entBlocks.set(0, entBlocks.get(0)+"*");
+//    		count.add(entBlocks);
+//		}
+//    	
+//    	
+//    	Tuple2<String, List<List<String>>> thisOne = new Tuple2<>(key, count);
+//    	
+////    	if (count.size() > 200 /*|| (count.size() == 1 && iterationCount.getValue()%5==0)*/) {
+////    		state.remove();
+////		} else {
+////	        state.update(count);
+////		}
+//    	state.update(count);
+//        
+//        return thisOne;
+//    };
+//    
+//    //save in state.
+//    //Using mapWithState, we just manipulate the update entities/blocks. It's a property provided by mapWithState. UpdateState manipulates with all data (force brute).
+//    JavaMapWithStateDStream<String, Iterable<List<String>>, List<List<String>>, Tuple2<String, List<List<String>>>> finalOutputProcessed =
+//    		blockPreprocessed.mapWithState(StateSpec.function(mappingFunctionBlockPreprocessed));
+//    
+//    //Avoid the increasing of data in memory
+//    finalOutputProcessed.checkpoint(new Duration(timeWindow*3));
 
 
 //    //print the entities stored in state part1
@@ -290,21 +288,21 @@ public class PRIMEFastKafkaV2 {
     
     
     
-    //convert to JavaPairDStream
-    JavaDStream<Tuple2<String, List<List<String>>>> onlyUpdatedEntityBlocksToCompare = finalOutputProcessed.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
-		@Override
-		public Boolean call(Tuple2<String, List<List<String>>> v1) throws Exception {
-			return true;
-		}
-	});
+//    //convert to JavaPairDStream
+//    JavaDStream<Tuple2<String, List<List<String>>>> onlyUpdatedEntityBlocksToCompare = blockPreprocessed.filter(new Function<Tuple2<String,List<List<String>>>, Boolean>() {
+//		@Override
+//		public Boolean call(Tuple2<String, List<List<String>>> v1) throws Exception {
+//			return true;
+//		}
+//	});
     		
-//    Accumulator<Integer> numberOfComparisons = sc.accumulator(0);
+    Accumulator<Integer> numberOfComparisons = sc.accumulator(0);
     
 	//coloca as tuplas no formato <e1, e2 = 0.65> (calcula similaridade)
-    JavaPairDStream<String, String> similarities = onlyUpdatedEntityBlocksToCompare.flatMapToPair(new PairFlatMapFunction<Tuple2<String,List<List<String>>>, String, String>() {
+    JavaPairDStream<String, String> similarities = blockPreprocessed.flatMapToPair(new PairFlatMapFunction<Tuple2<String,Iterable<List<String>>>, String, String>() {
     	
 		@Override
-		public Iterator<Tuple2<String, String>> call(Tuple2<String, List<List<String>>> input) throws Exception {
+		public Iterator<Tuple2<String, String>> call(Tuple2<String, Iterable<List<String>>> input) throws Exception {
 //			System.err.println("Calculando similaridade: " + ((System.currentTimeMillis() - initTime)/1000));
 			List<Tuple2<String, String>> output = new ArrayList<Tuple2<String, String>>();
 			
@@ -321,7 +319,7 @@ public class PRIMEFastKafkaV2 {
 							String idEnt2 = ent2.get(0).replace("*", "");
 							double similarity = calculateSimilarity(input._1(), ent1, ent2);
 							if (similarity >= 0) {
-//								numberOfComparisons.add(1);
+								numberOfComparisons.add(1);
 								
 								if (ent1.get(0).charAt(0) == 'S') {
 									Tuple2<String, String> pair1 = new Tuple2<String, String>(idEnt1, idEnt2 + "=" + similarity);
@@ -423,30 +421,30 @@ public class PRIMEFastKafkaV2 {
     };
     
     //save the output in state
-    JavaPairDStream<String, List<String>> PRIMEoutput =  groupedPruned.updateStateByKey(updateOutputFunction);
+//    JavaPairDStream<String, List<String>> PRIMEoutput =  groupedPruned.updateStateByKey(updateOutputFunction);
     
     //Avoid the increasing of data in memory
-    PRIMEoutput.checkpoint(Durations.seconds(timeWindow*3));
+//    PRIMEoutput.checkpoint(new Duration(timeWindow*3));
     
     		
-    PRIMEoutput.foreachRDD(rdd ->{
+    groupedPruned.foreachRDD(rdd ->{
 //    	System.err.println("Chegou no Fim: " + ((System.currentTimeMillis() - initTime)/1000));
     	System.out.println("Batch size: " + rdd.count());
     	
     	//Total TIME
-//    	long endTime = System.currentTimeMillis();
-//    	System.out.println("Total time: " + ((double)endTime-initTime)/1000 + " seconds.");
-//    	
-//    	//Current Iteration TIME
-//    	System.out.println("Iteration time: : " + ((double)endTime-timeForEachInteration.value())/1000 + " seconds.");
-//    	
-//    	sumTimePerInterations.add(((double)endTime-timeForEachInteration.value())/1000);
-//    	numberInterations.add(1);
-//    	System.out.println("Mean iteration time: " + (sumTimePerInterations.value()/numberInterations.value() + " seconds."));
-//    	
-//    	timeForEachInteration.setValue((double) endTime);
-//    	
-//    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
+    	long endTime = System.currentTimeMillis();
+    	System.out.println("Total time: " + ((double)endTime-initTime)/1000 + " seconds.");
+    	
+    	//Current Iteration TIME
+    	System.out.println("Iteration time: : " + ((double)endTime-timeForEachInteration.value())/1000 + " seconds.");
+    	
+    	sumTimePerInterations.add(((double)endTime-timeForEachInteration.value())/1000);
+    	numberInterations.add(1);
+    	System.out.println("Mean iteration time: " + (sumTimePerInterations.value()/numberInterations.value() + " seconds."));
+    	
+    	timeForEachInteration.setValue((double) endTime);
+    	
+    	System.out.println("Number of Comparisons: " + numberOfComparisons.value());
     	
 //        if(!rdd.isEmpty()){
 //           rdd.saveAsTextFile(OUTPUT_PATH);
@@ -461,7 +459,6 @@ public class PRIMEFastKafkaV2 {
 //        rdd.saveAsTextFile(OUTPUT_PATH);
 //    }
 //  });
-    
     
     
     // start streaming

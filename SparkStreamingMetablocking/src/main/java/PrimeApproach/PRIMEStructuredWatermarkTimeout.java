@@ -37,11 +37,11 @@ import org.apache.spark.sql.streaming.StreamingQuery;
 import org.apache.spark.sql.streaming.StreamingQueryException;
 import org.apache.spark.sql.streaming.StreamingQueryListener;
 import org.apache.spark.sql.streaming.Trigger;
-import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.streaming.StreamingQueryListener.QueryProgressEvent;
 import org.apache.spark.sql.streaming.StreamingQueryListener.QueryStartedEvent;
 import org.apache.spark.sql.streaming.StreamingQueryListener.QueryTerminatedEvent;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.streaming.State;
 import org.apache.spark.util.DoubleAccumulator;
 import org.apache.spark.util.LongAccumulator;
@@ -63,16 +63,16 @@ import tokens.KeywordGeneratorImpl;
 
 //Parallel-based Metablockig for Streaming Data
 //20 localhost:9092 60
-public class PRIMEStructuredWindowedWatermark {
+public class PRIMEStructuredWatermarkTimeout {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
-	  System.setProperty("hadoop.home.dir", "K:/winutils/");
+//	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
 	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
 	  
     
     SparkSession spark = SparkSession
     		  .builder()
-    		  .appName("PRIMEStructuredWindowed")
+    		  .appName("PRIMEStructuredWindowedTimeout")
     		  .master("local[6]")
     		  .getOrCreate();
     
@@ -81,45 +81,39 @@ public class PRIMEStructuredWindowedWatermark {
     		  .format("kafka")
     		  .option("kafka.bootstrap.servers", args[1])//localhost:9092    10.171.171.50:8088
     		  .option("subscribe", "mytopic")
+//    		  .option("failOnDataLoss", "false")
     		  .load()
     		  .selectExpr("CAST(value AS STRING)")
-    	      .as(Encoders.STRING()); //.withWatermark("event_time", "60 seconds")
+    	      .as(Encoders.STRING());
+    
     
     StructType structType = new StructType();
-    structType = structType.add("value", DataTypes.StringType, false);
+    structType = structType.add("isSource", DataTypes.BooleanType, false);
+    structType = structType.add("key", DataTypes.IntegerType, false);
+    structType = structType.add("attValues", DataTypes.StringType, false);
     structType = structType.add("creation", DataTypes.TimestampType, false);
 
     ExpressionEncoder<Row> encoderRow = RowEncoder.apply(structType);
     
-    Dataset<Row> entitiesMarked = lines.flatMap(new FlatMapFunction<String, Row>() {
+    Dataset<Row> entities = lines.flatMap(new FlatMapFunction<String, Row>() {
         @Override
         public Iterator<Row> call(String s) throws Exception {
+        	String[] attributes = s.split("<<>>");
             // a static map operation to demonstrate
             List<Object> data = new ArrayList<>();
-            data.add(s);
+            data.add(Boolean.parseBoolean(attributes[0]));
+            data.add(Integer.parseInt(attributes[1]));
+            data.add(attributes[2]);
             data.add(new Timestamp(System.currentTimeMillis()));
             ArrayList<Row> list = new ArrayList<>();
             list.add(RowFactory.create(data.toArray()));
             return list.iterator();
         }
-    }, encoderRow).withWatermark("creation", "5 seconds");
+    }, encoderRow).withWatermark("creation", args[2] + " seconds");
     
     
     // Generate running word count
-    Dataset<EntityProfile> entities = entitiesMarked.map(r -> new EntityProfile(r.getString(0)), Encoders.bean(EntityProfile.class));
-    
-    
-    StreamingQuery query = entities
-//          .withWatermark("event_time", "60 seconds")
-    	  .selectExpr("CAST(creation AS STRING)")
-    	  .writeStream()
-    	  .outputMode("update")
-    	  .format("console")
-//    	  .option("kafka.bootstrap.servers", args[1])
-//    	  .option("checkpointLocation", args[4])//C:\\Users\\lutibr\\Documents\\checkpoint\\
-//    	  .option("topic", "outputtopic")
-    	  .trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
-    	  .start();
+//    Dataset<EntityProfile> entities = entitiesMarked.map(r -> new EntityProfile(r.getString(0)), Encoders.bean(EntityProfile.class));
     
 	//INIT TIME
     long initTime = System.currentTimeMillis();
@@ -128,23 +122,32 @@ public class PRIMEStructuredWindowedWatermark {
 //	DoubleAccumulator sumTimePerInterations = spark.sparkContext().doubleAccumulator();
 //	DoubleAccumulator numberInterations = spark.sparkContext().doubleAccumulator();
     
-    Dataset<Tuple2<Integer, Node>> streamOfPairs = entities.flatMap(new FlatMapFunction<EntityProfile, Tuple2<Integer, Node>>() {
+    Dataset<Tuple2<Integer, Node>> streamOfPairs = entities.flatMap(new FlatMapFunction<Row, Tuple2<Integer, Node>>() {
 
 		@Override
-		public Iterator call(EntityProfile se) throws Exception {
+		public Iterator call(Row se) throws Exception {
 			List<Tuple2<Integer, Node>> output = new ArrayList<Tuple2<Integer, Node>>();
 			
 			Set<Integer> cleanTokens = new HashSet<Integer>();
 			
-			for (Attribute att : se.getAttributes()) {
-//				String[] tokens = gr.demokritos.iit.jinsect.utils.splitToWords(att.getValue());
-				KeywordGenerator kw = new KeywordGeneratorImpl();
-				for (String string : kw.generateKeyWords(att.getValue())) {
-					cleanTokens.add(string.hashCode());
-				}
+			boolean isSource = se.getBoolean(0);
+			int key = se.getInt(1);
+			String attValues = se.getString(2);
+			
+			KeywordGenerator kw = new KeywordGeneratorImpl();
+			for (String string : kw.generateKeyWords(attValues)) {
+				cleanTokens.add(string.hashCode());
 			}
 			
-			Node node = new Node(se.getKey(), cleanTokens, new HashSet<>(), se.isSource());
+//			for (Attribute att : se.getAttributes()) {
+////				String[] tokens = gr.demokritos.iit.jinsect.utils.splitToWords(att.getValue());
+//				KeywordGenerator kw = new KeywordGeneratorImpl();
+//				for (String string : kw.generateKeyWords(att.getValue())) {
+//					cleanTokens.add(string.hashCode());
+//				}
+//			}
+			
+			Node node = new Node(key, cleanTokens, new HashSet<>(), isSource);
 			
 			for (Integer tk : cleanTokens) {
 				node.setTokenTemporary(tk);
@@ -173,13 +176,12 @@ public class PRIMEStructuredWindowedWatermark {
 				@Override
 				public Tuple2<Integer, NodeCollection> call(Integer key, Iterator<Tuple2<Integer, Node>> values, GroupState<NodeCollection> state)
 						throws Exception {
-					if (state.hasTimedOut()) {            // If called when timing out, remove the state
-				          state.remove();
-				          Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, state.get());
-				          return thisOne;
-
-				    } else {
-				    	NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
+					NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
+					if (state.hasTimedOut()) {
+						state.remove();
+						Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
+						return thisOne;
+					} else {
 						List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
 						
 						count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
@@ -195,11 +197,11 @@ public class PRIMEStructuredWindowedWatermark {
 
 						Tuple2<Integer, NodeCollection> thisOne = new Tuple2<>(key, count);
 						state.update(count);
-						state.setTimeoutDuration(60000);
+						
+						state.setTimeoutDuration(args[2] + " seconds");
 
 						return thisOne;
-				    }
-					
+					}
 					
 				}
     	      };
@@ -319,17 +321,16 @@ public class PRIMEStructuredWindowedWatermark {
 	});
     		
     //Streaming query that stores the output incrementally.
-//    StreamingQuery query = lines
-////      .withWatermark("event_time", "60 seconds")
-//	  .selectExpr("CAST(value AS STRING)")
-//	  .writeStream()
-//	  .outputMode("update")
-//	  .format("kafka")
-//	  .option("kafka.bootstrap.servers", args[1])
-//	  .option("checkpointLocation", args[4])//C:\\Users\\lutibr\\Documents\\checkpoint\\
-//	  .option("topic", "outputtopic")
-//	  .trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
-//	  .start();
+    StreamingQuery query = prunedGraph
+	  .selectExpr("CAST(value AS STRING)")
+	  .writeStream()
+	  .outputMode("update")
+	  .format("kafka")
+	  .option("kafka.bootstrap.servers", args[1])
+	  .option("checkpointLocation", args[4])//C:\\Users\\lutibr\\Documents\\checkpoint\\
+	  .option("topic", "outputtopic")
+	  .trigger(Trigger.ProcessingTime(timeWindow + " seconds"))
+	  .start();
     
     
     

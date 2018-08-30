@@ -61,15 +61,15 @@ import tokens.KeywordGeneratorImpl;
 //20 localhost:9092 60
 public class MetablockingStructuredWindowed {
   public static void main(String[] args) throws InterruptedException, StreamingQueryException {
-	  System.setProperty("hadoop.home.dir", "K:/winutils/");
+//	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
 	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
 	  
     
     SparkSession spark = SparkSession
     		  .builder()
-    		  .appName("PRIMEStructuredWindowed")
-    		  .master("local[8]")
+    		  .appName("MetablockingStructuredWindowed")
+//    		  .master("local[6]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
