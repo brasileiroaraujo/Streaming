@@ -72,8 +72,8 @@ public class PRIMEStructuredWatermarkTimeout {
     
     SparkSession spark = SparkSession
     		  .builder()
-    		  .appName("PRIMEStructuredWindowedTimeout")
-    		  .master("local[6]")
+    		  .appName("PRIMEStructuredWatermarkTimeout")
+//    		  .master("local[6]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
@@ -103,7 +103,11 @@ public class PRIMEStructuredWatermarkTimeout {
             List<Object> data = new ArrayList<>();
             data.add(Boolean.parseBoolean(attributes[0]));
             data.add(Integer.parseInt(attributes[1]));
-            data.add(attributes[2]);
+            if (attributes.length == 3) {
+            	data.add(attributes[2]);
+			} else {
+				data.add(" ");
+			}
             data.add(new Timestamp(System.currentTimeMillis()));
             ArrayList<Row> list = new ArrayList<>();
             list.add(RowFactory.create(data.toArray()));

@@ -12,7 +12,7 @@ import java.util.Properties;
 import java.util.Random;
 
 //localhost:9092 400 inputs/dataset1_abt inputs/dataset2_buy
-public class KafkaDataStreamingProducer {
+public class KafkaDataStreamingProducer2 {
 
     public static void main(String[] args) throws InterruptedException {
         Properties props = new Properties();
@@ -71,7 +71,7 @@ public class KafkaDataStreamingProducer {
 				EntityProfile entitySource = EntityListSource.get(i);
 				entitySource.setSource(true);
 				entitySource.setKey(uniqueId);
-				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat());
+				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat2());
 	            producer.send(record);
 			}
 			
@@ -79,7 +79,7 @@ public class KafkaDataStreamingProducer {
 				EntityProfile entityTarget = EntityListTarget.get(i);
 				entityTarget.setSource(false);
 				entityTarget.setKey(uniqueId);
-				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat());
+				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat2());
 	            producer.send(record2);
 			}
 			

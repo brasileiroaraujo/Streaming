@@ -66,7 +66,7 @@ public class PRIMEStructuredWindowedTimeout {
     SparkSession spark = SparkSession
     		  .builder()
     		  .appName("PRIMEStructuredWindowedTimeout")
-    		  .master("local[6]")
+//    		  .master("local[6]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
