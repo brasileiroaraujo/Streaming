@@ -23,8 +23,8 @@ public class IncrementalQualityEvaluation {
 	
 	public static void main(String[] args) {
 		//CHOOSE THE INPUT PATHS
-        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_dblpacm";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
-        String INPUT_PATH_BLOCKS = "C:\\Users\\lutibr\\Documents\\outputs\\imdb_dbpedia_wind120\\";
+        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_amazongp";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
+        String INPUT_PATH_BLOCKS = "C:\\Users\\lutibr\\Documents\\outputs\\EDBT\\amazon_gp_vary_primewatermark120-260\\";
         
         
     	HashSet<IdDuplicates> groundtruth = null;
@@ -60,6 +60,7 @@ public class IncrementalQualityEvaluation {
     		try {
     			//br = new BufferedReader(new FileReader(FILENAME));
     			fr = new FileReader(INPUT_PATH_BLOCKS+fileNames);//INPUT_PATH_BLOCKS + k + ".txt");
+    			System.out.println(INPUT_PATH_BLOCKS+fileNames);
     			br = new BufferedReader(fr);
     			String sCurrentLine;
     			while ((sCurrentLine = br.readLine()) != null) {

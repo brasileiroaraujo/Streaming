@@ -265,7 +265,7 @@ public class PRIMEStructured {
         }
         @Override
         public void onQueryProgress(QueryProgressEvent queryProgress) {
-            System.out.println("Query duration (ms): " + queryProgress.progress().durationMs().get("triggerExecution"));
+            System.out.println(queryProgress.progress().durationMs().get("triggerExecution"));//Query duration (ms)
         }
 	});
     		

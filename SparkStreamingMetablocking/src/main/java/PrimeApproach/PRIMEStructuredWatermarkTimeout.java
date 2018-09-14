@@ -73,7 +73,7 @@ public class PRIMEStructuredWatermarkTimeout {
     SparkSession spark = SparkSession
     		  .builder()
     		  .appName("PRIMEStructuredWatermarkTimeout")
-//    		  .master("local[6]")
+    		  .master("local[6]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
@@ -320,7 +320,7 @@ public class PRIMEStructuredWatermarkTimeout {
         }
         @Override
         public void onQueryProgress(QueryProgressEvent queryProgress) {
-            System.out.println("Query duration (ms): " + queryProgress.progress().durationMs().get("triggerExecution"));
+            System.out.println(queryProgress.progress().durationMs().get("triggerExecution"));//Query duration (ms)
         }
 	});
     		

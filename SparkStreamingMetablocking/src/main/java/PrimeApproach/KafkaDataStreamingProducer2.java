@@ -29,7 +29,8 @@ public class KafkaDataStreamingProducer2 {
         
         //CHOOSE THE INPUT PATHS
         String INPUT_PATH1 = args[2];
-        String INPUT_PATH2 = args[3];
+//        String INPUT_PATH2 = args[3];
+        boolean IS_SOURCE = Boolean.parseBoolean(args[3]);
         
 //        String INPUT_PATH1 = "inputs/dataset1_imdb";
 //        String INPUT_PATH2 = "inputs/dataset2_dbpedia";
@@ -48,40 +49,41 @@ public class KafkaDataStreamingProducer2 {
 
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         ArrayList<EntityProfile> EntityListSource = null;
-        ArrayList<EntityProfile> EntityListTarget = null;
+//        ArrayList<EntityProfile> EntityListTarget = null;
         
 		// reading the files
 		ObjectInputStream ois1;
 		ObjectInputStream ois2;
 		try {
 			ois1 = new ObjectInputStream(new FileInputStream(INPUT_PATH1));
-			ois2 = new ObjectInputStream(new FileInputStream(INPUT_PATH2));
+//			ois2 = new ObjectInputStream(new FileInputStream(INPUT_PATH2));
 			EntityListSource = (ArrayList<EntityProfile>) ois1.readObject();
-			EntityListTarget = (ArrayList<EntityProfile>) ois2.readObject();
+//			EntityListTarget = (ArrayList<EntityProfile>) ois2.readObject();
 			ois1.close();
-			ois2.close();
+//			ois2.close();
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		
 		int uniqueId = 0;
-		for (int i = 0; i < Math.max(EntityListSource.size(), EntityListTarget.size()); i++) {
+//		for (int i = 0; i < Math.max(EntityListSource.size(), EntityListTarget.size()); i++) {
+		for (int i = 0; i < EntityListSource.size(); i++) {
 			if (i < EntityListSource.size()) {
 				EntityProfile entitySource = EntityListSource.get(i);
-				entitySource.setSource(true);
+				entitySource.setSource(IS_SOURCE);
 				entitySource.setKey(uniqueId);
 				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat2());
 	            producer.send(record);
 			}
 			
-			if (i < EntityListTarget.size()) {
-				EntityProfile entityTarget = EntityListTarget.get(i);
-				entityTarget.setSource(false);
-				entityTarget.setKey(uniqueId);
-				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat2());
-	            producer.send(record2);
-			}
+//			if (i < EntityListTarget.size()) {
+//				EntityProfile entityTarget = EntityListTarget.get(i);
+//				entityTarget.setSource(false);
+//				entityTarget.setKey(uniqueId);
+//				ProducerRecord<String, String> record2 = new ProducerRecord<>(topicName, entityTarget.getStandardFormat2());
+//	            producer.send(record2);
+//			}
 			
 			uniqueId++;
 			

@@ -12,7 +12,7 @@ import java.util.Properties;
 import java.util.Random;
 
 //localhost:9092 400 inputs/dataset1_abt inputs/dataset2_buy
-public class KafkaDataStreamingProducer {
+public class KafkaDataStreamingProducerVariable {
 
     public static void main(String[] args) throws InterruptedException {
         Properties props = new Properties();
@@ -21,15 +21,23 @@ public class KafkaDataStreamingProducer {
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         
 //        int[] timers = {10, 25, 50, 100, 250};
-        int[] timers = {Integer.parseInt(args[1])};
+        //CHOOSE THE INPUT PATHS
+        String INPUT_PATH1 = args[1];
+        boolean IS_SOURCE = Boolean.parseBoolean(args[2]);
+        int window = Integer.parseInt(args[3]);
+        int type = Integer.parseInt(args[4]);
+        int size = Integer.parseInt(args[5]);
+        int[] timerSet = new int[size];
+        for (int i = 0; i < size; i++) {
+        	timerSet[i] = Integer.parseInt(args[i+6]);
+		}
+        
         Random random = new Random();
         
         //TOPIC
         final String topicName = "mytopic";
         
-        //CHOOSE THE INPUT PATHS
-        String INPUT_PATH1 = args[2];
-        boolean IS_SOURCE = Boolean.parseBoolean(args[3]);
+        
 //        String INPUT_PATH2 = args[3];
         
 //        String INPUT_PATH1 = "inputs/dataset1_imdb";
@@ -68,12 +76,20 @@ public class KafkaDataStreamingProducer {
 		
 		int uniqueId = 0;
 //		for (int i = 0; i < Math.max(EntityListSource.size(), EntityListTarget.size()); i++) {
+		int index = 0;
+		double sum = 0;
 		for (int i = 0; i < EntityListSource.size(); i++) {
 			if (i < EntityListSource.size()) {
 				EntityProfile entitySource = EntityListSource.get(i);
 				entitySource.setSource(IS_SOURCE);
 				entitySource.setKey(uniqueId);
-				ProducerRecord<String, String> record = new ProducerRecord<>(topicName, entitySource.getStandardFormat());
+				ProducerRecord<String, String> record;
+				if (type == 1) {
+					record = new ProducerRecord<>(topicName, entitySource.getStandardFormat());
+				} else {
+					record = new ProducerRecord<>(topicName, entitySource.getStandardFormat2());
+				}
+				
 	            producer.send(record);
 			}
 			
@@ -85,9 +101,16 @@ public class KafkaDataStreamingProducer {
 //	            producer.send(record2);
 //			}
 			
-			uniqueId++;
 			
-            Thread.sleep(timers[random.nextInt(timers.length)]);
+			if (index < size && uniqueId >= (sum + timerSet[index])) {
+				sum += timerSet[index];
+				System.out.println("bacth" + index + ": " + uniqueId);
+				index++;
+				Thread.sleep(window * 1000);
+			}
+			
+			uniqueId++;
+            
 		}
 		
         producer.close();
