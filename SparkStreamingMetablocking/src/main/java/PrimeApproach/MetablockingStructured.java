@@ -64,7 +64,7 @@ public class MetablockingStructured {
 //	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
 	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
-	  
+	  int numNodes = Integer.parseInt(args[5]);
     
     SparkSession spark = SparkSession
     		  .builder()
@@ -116,7 +116,7 @@ public class MetablockingStructured {
 			
 			return output.iterator();
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class))).repartition(numNodes);
     
     
 	//define the blocks based on the tokens <tk, [n1,n2,n3]>, where n is a node.
@@ -147,7 +147,7 @@ public class MetablockingStructured {
 			}
 			return output.iterator();
 		}
-	}, Encoders.tuple(Encoders.STRING(), Encoders.INT()));
+	}, Encoders.tuple(Encoders.STRING(), Encoders.INT())).repartition(numNodes);
     
     
     //coloca as tuplas no formato <e1, [b1,b2]>
@@ -186,7 +186,7 @@ public class MetablockingStructured {
 			}
 			return output.iterator();
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class))).repartition(numNodes);
     
     
     
@@ -237,13 +237,13 @@ public class MetablockingStructured {
 //            GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
     
     
+    Dataset<Tuple2<Integer, MetablockingNodeCollection>> storedBlocksPart = storedBlocks.repartition(numNodes);
     
     
-    
-    DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
+//    DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
     
     //The comparison between the entities (i.e., the Nodes) are performed.
-    Dataset<Tuple2<Integer, MetablockingNode>> similarities = storedBlocks.flatMap(new FlatMapFunction<Tuple2<Integer, MetablockingNodeCollection>, Tuple2<Integer, MetablockingNode>>() {
+    Dataset<Tuple2<Integer, MetablockingNode>> similarities = storedBlocksPart.flatMap(new FlatMapFunction<Tuple2<Integer, MetablockingNodeCollection>, Tuple2<Integer, MetablockingNode>>() {
 		@Override
 		public Iterator<Tuple2<Integer, MetablockingNode>> call(Tuple2<Integer, MetablockingNodeCollection> t) throws Exception {
 			List<MetablockingNode> entitiesToCompare = t._2().getNodeList();
@@ -256,7 +256,7 @@ public class MetablockingStructured {
 					if (n1.isSource() != n2.isSource() && (n1.isMarked() || n2.isMarked())) {
 						double similarity = calculateSimilarity(t._1(), n1.getBlocks(), n2.getBlocks());
 						if (similarity >= 0) {
-							numberOfComparisons.add(1);
+//							numberOfComparisons.add(1);
 							if (n1.isSource()) {
 								n1.addNeighbor(new Tuple2<Integer, Double>(n2.getEntityId(), similarity));
 							} else {
@@ -293,7 +293,7 @@ public class MetablockingStructured {
 				return 0;
 			}
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(MetablockingNode.class))).repartition(numNodes);
     
     
     
@@ -327,7 +327,7 @@ public class MetablockingStructured {
 		}
 
 
-	}, Encoders.STRING());
+	}, Encoders.STRING()).repartition(numNodes);
     
     spark.streams().addListener(new StreamingQueryListener() {
 		

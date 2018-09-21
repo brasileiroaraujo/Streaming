@@ -61,7 +61,7 @@ public class PRIMEStructured {
 //	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
 	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
-	  
+	  int numNodes = Integer.parseInt(args[5]);
     
     SparkSession spark = SparkSession
     		  .builder()
@@ -114,7 +114,7 @@ public class PRIMEStructured {
 			
 			return output.iterator();
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class))).repartition(numNodes);
     
     
 	//define the blocks based on the tokens <tk, [n1,n2,n3]>, where n is a node.
@@ -137,7 +137,7 @@ public class PRIMEStructured {
 					NodeCollection count = (state.exists() ? state.get() : new NodeCollection());
 					List<Tuple2<Integer, Node>> listOfBlocks = IteratorUtils.toList(values);
 					
-					count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
+//					count.removeOldNodes(Integer.parseInt(args[2]));//time in seconds
 					
 					for (Node entBlocks : count.getNodeList()) {
 						entBlocks.setMarked(false);
@@ -163,11 +163,11 @@ public class PRIMEStructured {
 //            GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
     
     
-    
-    DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
+    Dataset<Tuple2<Integer, NodeCollection>> storedBlocksPart = storedBlocks.repartition(numNodes);
+//    DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
     
     //The comparison between the entities (i.e., the Nodes) are performed.
-    Dataset<Tuple2<Integer, Node>> pairEntityBlock = storedBlocks.flatMap(new FlatMapFunction<Tuple2<Integer, NodeCollection>, Tuple2<Integer, Node>>() {
+    Dataset<Tuple2<Integer, Node>> pairEntityBlock = storedBlocksPart.flatMap(new FlatMapFunction<Tuple2<Integer, NodeCollection>, Tuple2<Integer, Node>>() {
 		@Override
 		public Iterator<Tuple2<Integer, Node>> call(Tuple2<Integer, NodeCollection> t) throws Exception {
 			List<Node> entitiesToCompare = t._2().getNodeList();
@@ -180,7 +180,7 @@ public class PRIMEStructured {
 					if (n1.isSource() != n2.isSource() && (n1.isMarked() || n2.isMarked())) {
 						double similarity = calculateSimilarity(t._1(), n1.getBlocks(), n2.getBlocks());
 						if (similarity >= 0) {
-							numberOfComparisons.add(1);
+//							numberOfComparisons.add(1);
 							if (n1.isSource()) {
 								n1.addNeighbor(new Tuple2<Integer, Double>(n2.getId(), similarity));
 							} else {
@@ -217,7 +217,7 @@ public class PRIMEStructured {
 				return 0;
 			}
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class))).repartition(numNodes);
     
     
     
@@ -251,7 +251,7 @@ public class PRIMEStructured {
 		}
 
 
-	}, Encoders.STRING());
+	}, Encoders.STRING()).repartition(numNodes);
     
     spark.streams().addListener(new StreamingQueryListener() {
 		

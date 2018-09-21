@@ -23,8 +23,8 @@ public class IncrementalQualityEvaluation {
 	
 	public static void main(String[] args) {
 		//CHOOSE THE INPUT PATHS
-        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_amazongp";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
-        String INPUT_PATH_BLOCKS = "C:\\Users\\lutibr\\Documents\\outputs\\EDBT\\amazon_gp_vary_primewatermark120-260\\";
+        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_imdbdbpedia";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
+        String INPUT_PATH_BLOCKS = "C:\\Users\\lutibr\\Documents\\outputs\\EDBT\\imdb_dbpedia_PRIME-windowed4Tau\\";
         
         
     	HashSet<IdDuplicates> groundtruth = null;
@@ -61,62 +61,65 @@ public class IncrementalQualityEvaluation {
     			//br = new BufferedReader(new FileReader(FILENAME));
     			fr = new FileReader(INPUT_PATH_BLOCKS+fileNames);//INPUT_PATH_BLOCKS + k + ".txt");
     			System.out.println(INPUT_PATH_BLOCKS+fileNames);
-    			br = new BufferedReader(fr);
-    			String sCurrentLine;
-    			while ((sCurrentLine = br.readLine()) != null) {
-    				sCurrentLine = sCurrentLine.replace("(", "");
-    				sCurrentLine = sCurrentLine.replace(")", "");
-    				sCurrentLine = sCurrentLine.replace("[", "");
-    				sCurrentLine = sCurrentLine.replace("]", "");
-    				sCurrentLine = sCurrentLine.replace(" ", "");
-    				String[] entities = sCurrentLine.split(",");
-    				
-    				//old version of prime
-//    				if (entities[0].contains("S")) {
-//    					int key = Integer.parseInt(entities[0].replace("S", ""));
-//    					List<Integer> entitiesToCompare = new ArrayList<Integer>();
-//    					for (int i = 1; i < entities.length; i++) {
-//    						entitiesToCompare.add(Integer.parseInt(entities[i].replace("T", "")));
-//    					}
-//    					
-//    					totalComparisons += entitiesToCompare.size();
-//    					
-//    					blocks.put(key, entitiesToCompare);
-//    				}
-    				
-    				//new version
-    				int key = Integer.parseInt(entities[0]);
-    				
-    				if (key > indexMaxSource) {
-    					indexMaxSource = key;
-					}
-    				if (key < indexMinSource) {
-    					indexMinSource = key;
-					}
-    				
-    				Set<Integer> entitiesToCompare = new HashSet<Integer>();
-    				for (int i = 1; i < entities.length; i++) {
-    					if (Integer.parseInt(entities[i]) > indexMaxTarget) {
-        					indexMaxTarget = Integer.parseInt(entities[i]);
+    			if (fileNames.contains("txt")) {
+    				br = new BufferedReader(fr);
+        			String sCurrentLine;
+        			while ((sCurrentLine = br.readLine()) != null) {
+        				sCurrentLine = sCurrentLine.replace("(", "");
+        				sCurrentLine = sCurrentLine.replace(")", "");
+        				sCurrentLine = sCurrentLine.replace("[", "");
+        				sCurrentLine = sCurrentLine.replace("]", "");
+        				sCurrentLine = sCurrentLine.replace(" ", "");
+        				String[] entities = sCurrentLine.split(",");
+        				
+        				//old version of prime
+//        				if (entities[0].contains("S")) {
+//        					int key = Integer.parseInt(entities[0].replace("S", ""));
+//        					List<Integer> entitiesToCompare = new ArrayList<Integer>();
+//        					for (int i = 1; i < entities.length; i++) {
+//        						entitiesToCompare.add(Integer.parseInt(entities[i].replace("T", "")));
+//        					}
+//        					
+//        					totalComparisons += entitiesToCompare.size();
+//        					
+//        					blocks.put(key, entitiesToCompare);
+//        				}
+        				
+        				//new version
+        				int key = Integer.parseInt(entities[0]);
+        				
+        				if (key > indexMaxSource) {
+        					indexMaxSource = key;
     					}
-        				if (Integer.parseInt(entities[i]) < indexMinTarget) {
-        					indexMinTarget = Integer.parseInt(entities[i]);
+        				if (key < indexMinSource) {
+        					indexMinSource = key;
     					}
-    					entitiesToCompare.add(Integer.parseInt(entities[i]));
-    				}
-    				
-    				if (blocks.containsKey(key)) {
-    					entitiesToCompare.addAll(blocks.get(key));
-    					blocks.put(key, entitiesToCompare);
-					} else {
-						blocks.put(key, entitiesToCompare);
-					}
-    				
-    				
-    				
-    			}
+        				
+        				Set<Integer> entitiesToCompare = new HashSet<Integer>();
+        				for (int i = 1; i < entities.length; i++) {
+        					if (Integer.parseInt(entities[i]) > indexMaxTarget) {
+            					indexMaxTarget = Integer.parseInt(entities[i]);
+        					}
+            				if (Integer.parseInt(entities[i]) < indexMinTarget) {
+            					indexMinTarget = Integer.parseInt(entities[i]);
+        					}
+        					entitiesToCompare.add(Integer.parseInt(entities[i]));
+        				}
+        				
+        				if (blocks.containsKey(key)) {
+        					entitiesToCompare.addAll(blocks.get(key));
+        					blocks.put(key, entitiesToCompare);
+    					} else {
+    						blocks.put(key, entitiesToCompare);
+    					}
+        				
+        				
+        				
+        			}
+        			
+        			intervalos.add(new Tuple2<Tuple2<Integer,Integer>, Tuple2<Integer,Integer>>(new Tuple2<Integer,Integer>(indexMinSource, indexMaxSource), new Tuple2<Integer,Integer>(indexMinTarget, indexMaxTarget)));
+				}
     			
-    			intervalos.add(new Tuple2<Tuple2<Integer,Integer>, Tuple2<Integer,Integer>>(new Tuple2<Integer,Integer>(indexMinSource, indexMaxSource), new Tuple2<Integer,Integer>(indexMinTarget, indexMaxTarget)));
     		} catch (IOException e) {
     			e.printStackTrace();
     		} finally {

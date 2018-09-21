@@ -78,6 +78,12 @@ public class EntityProfile implements Serializable {
 		}
 	}
 	
+//	public EntityProfile() {
+//		key = -1;
+//		entityUrl = "NONE";
+//		creation = new Timestamp(System.currentTimeMillis());
+//		attributes = new HashSet();
+//	}
 	
 	public EntityProfile(String standardFormat) {
 		String[] parts = standardFormat.split(split1);

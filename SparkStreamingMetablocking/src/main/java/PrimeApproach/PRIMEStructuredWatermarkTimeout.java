@@ -21,6 +21,7 @@ import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.api.java.function.MapGroupsFunction;
 import org.apache.spark.api.java.function.MapGroupsWithStateFunction;
+import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.ForeachWriter;
@@ -64,16 +65,19 @@ import tokens.KeywordGeneratorImpl;
 //Parallel-based Metablockig for Streaming Data
 //20 localhost:9092 60
 public class PRIMEStructuredWatermarkTimeout {
-  public static void main(String[] args) throws InterruptedException, StreamingQueryException {
+  
+
+public static void main(String[] args) throws InterruptedException, StreamingQueryException {
 //	  System.setProperty("hadoop.home.dir", "K:/winutils/");
 	  String OUTPUT_PATH = args[3];  //$$ will be replaced by the increment index //"outputs/teste.txt";
 	  int timeWindow = Integer.parseInt(args[0]); //We have configured the period to x seconds (x sec).
+	  int numNodes = Integer.parseInt(args[5]);
 	  
     
     SparkSession spark = SparkSession
     		  .builder()
     		  .appName("PRIMEStructuredWatermarkTimeout")
-    		  .master("local[6]")
+//    		  .master("local[6]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark
@@ -160,7 +164,7 @@ public class PRIMEStructuredWatermarkTimeout {
 			
 			return output.iterator();
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class))).repartition(numNodes);
     
     
 	//define the blocks based on the tokens <tk, [n1,n2,n3]>, where n is a node.
@@ -217,12 +221,12 @@ public class PRIMEStructuredWatermarkTimeout {
             Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(NodeCollection.class)),
             GroupStateTimeout.ProcessingTimeTimeout());//ESSA LINHA PODE SER AVALIADA DEPOIS
     
+    Dataset<Tuple2<Integer, NodeCollection>> storedBlocksPart = storedBlocks.repartition(numNodes);
     
-    
-    DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
+    //DoubleAccumulator numberOfComparisons = spark.sparkContext().doubleAccumulator();
     
     //The comparison between the entities (i.e., the Nodes) are performed.
-    Dataset<Tuple2<Integer, Node>> pairEntityBlock = storedBlocks.flatMap(new FlatMapFunction<Tuple2<Integer, NodeCollection>, Tuple2<Integer, Node>>() {
+    Dataset<Tuple2<Integer, Node>> pairEntityBlock = storedBlocksPart.flatMap(new FlatMapFunction<Tuple2<Integer, NodeCollection>, Tuple2<Integer, Node>>() {
 		@Override
 		public Iterator<Tuple2<Integer, Node>> call(Tuple2<Integer, NodeCollection> t) throws Exception {
 			List<Node> entitiesToCompare = t._2().getNodeList();
@@ -235,7 +239,7 @@ public class PRIMEStructuredWatermarkTimeout {
 					if (n1.isSource() != n2.isSource() && (n1.isMarked() || n2.isMarked())) {
 						double similarity = calculateSimilarity(t._1(), n1.getBlocks(), n2.getBlocks());
 						if (similarity >= 0) {
-							numberOfComparisons.add(1);
+//							numberOfComparisons.add(1);
 							if (n1.isSource()) {
 								n1.addNeighbor(new Tuple2<Integer, Double>(n2.getId(), similarity));
 							} else {
@@ -272,7 +276,7 @@ public class PRIMEStructuredWatermarkTimeout {
 				return 0;
 			}
 		}
-	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class)));
+	}, Encoders.tuple(Encoders.INT(), Encoders.javaSerialization(Node.class))).repartition(numNodes);
     
     
     
@@ -306,7 +310,7 @@ public class PRIMEStructuredWatermarkTimeout {
 		}
 
 
-	}, Encoders.STRING());
+	}, Encoders.STRING()).repartition(numNodes);
     
     spark.streams().addListener(new StreamingQueryListener() {
 		
