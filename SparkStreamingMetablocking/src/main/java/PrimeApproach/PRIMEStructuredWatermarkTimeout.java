@@ -77,7 +77,7 @@ public static void main(String[] args) throws InterruptedException, StreamingQue
     SparkSession spark = SparkSession
     		  .builder()
     		  .appName("PRIMEStructuredWatermarkTimeout")
-//    		  .master("local[6]")
+    		  .master("local[1]")
     		  .getOrCreate();
     
     Dataset<String> lines = spark

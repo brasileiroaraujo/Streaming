@@ -23,8 +23,8 @@ public class IncrementalQualityEvaluation {
 	
 	public static void main(String[] args) {
 		//CHOOSE THE INPUT PATHS
-        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_imdbdbpedia";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
-        String INPUT_PATH_BLOCKS = "C:\\Users\\lutibr\\Documents\\outputs\\EDBT\\imdb_dbpedia_PRIME-windowed4Tau\\";
+        String INPUT_PATH_GROUNDTRUTH = "inputs/groundtruth_dblpacm";//"inputs/groundtruth_amazongp";//"inputs/groundtruth_abtbuy";
+        String INPUT_PATH_BLOCKS = "C:\\Users\\lutibr\\Documents\\outputs\\dblp_acm\\";
         
         
     	HashSet<IdDuplicates> groundtruth = null;
@@ -178,6 +178,7 @@ public class IncrementalQualityEvaluation {
 		System.out.println("PC= " + pc);
 		System.out.println("PQ= " + pq);
 		System.out.println("FM= " + (2*pc*pq)/(pc+pq));
+		System.out.println("Total of Comparisons= " + totalComparisons);
 		
 		
 	}
